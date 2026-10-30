@@ -1,4 +1,12 @@
+.claude
 .github
+.gitignore
+.venv
+__pycache__
+docs
+scripts
 tests
+CLAUDE.md
 Dockerfile
 README.md
+paseo.json

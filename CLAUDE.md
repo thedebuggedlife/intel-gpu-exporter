@@ -10,25 +10,17 @@ A Prometheus exporter for Intel GPUs. All the code is in `intel-gpu-exporter.py`
 
 ## Commands
 
-There is no test suite, linter, or PR CI. `tests/data.json` is a captured sample that nothing runs automatically, and it is excluded from the image by `.dockerignore`.
+There is no test framework, linter, or PR CI. `tests/data.json` is a captured sample and `tests/replay_sample.py` replays its first entry; nothing runs either automatically, and `.dockerignore` excludes `tests/` from the image.
 
 `intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the sample-replay check below is the only way to exercise the code. It covers `update()` but not the stream parsing in `__main__`.
 
 ```bash
-# Keep the venv outside the repo: there is no .gitignore, and the Dockerfile's `COPY . .` would pick it up
-python3 -m venv /tmp/igpu-venv
-/tmp/igpu-venv/bin/pip install -r requirements.txt
+# Paseo runs these two when it creates a worktree
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
 # Replay the first captured sample through update() and print the resulting metrics
-/tmp/igpu-venv/bin/python -c "
-import importlib.util, json
-from prometheus_client import generate_latest
-spec = importlib.util.spec_from_file_location('exporter', 'intel-gpu-exporter.py')
-exporter = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(exporter)
-exporter.update(json.JSONDecoder().raw_decode(open('tests/data.json').read())[0])
-print(generate_latest().decode())
-"
+.venv/bin/python tests/replay_sample.py
 
 # Build the image (CI only publishes linux/amd64)
 docker build --platform linux/amd64 -t intel-gpu-exporter .
@@ -63,3 +55,14 @@ Set through environment variables, none of which are documented in the README:
 ## Release
 
 Pushes publish images to `ghcr.io/<repo>`: `main` to `:rolling` and `dev` to `:rolling-dev`. There are no versioned tags. Renovate manages the `prometheus_client` pin, the Python base image, and the GitHub Actions versions.
+
+## Agent workflow (superpowers + Paseo)
+
+These are declared preferences; they override the superpowers skills' defaults.
+
+- **Worktrees are owned by Paseo** (`paseo.json` creates `.venv` from `requirements.txt` on creation; they live under `~/.paseo/worktrees/`). If already in a linked worktree, work there. Never use `EnterWorktree` or `git worktree add`. From the main checkout, create a Paseo worktree (`paseo worktree create --mode branch-off --new-branch <name>`, or `mcp__paseo__create_workspace`) — the main checkout may be shared with other agents. Don't bump the `requirements.txt` pin in a worktree, since Renovate owns it; if dependencies are missing, run `.venv/bin/pip install -r requirements.txt`.
+- **Baseline / verification** is `.venv/bin/python tests/replay_sample.py`. Run `docker build` only when changing the `Dockerfile`, `.dockerignore` or `requirements.txt`.
+- **Image contents:** the Dockerfile's `COPY . .` takes everything `.dockerignore` doesn't exclude, so add new non-runtime files there.
+- **Finishing a branch:** always push and open a PR against `origin` (`thedebuggedlife`), never `upstream`; never merge into `main` locally. Every merge publishes `:rolling`, including docs-only ones. Archive the worktree through Paseo, then delete the merged branch. If a worktree was removed outside Paseo, run `scripts/lumen-prune.sh`.
+- **Specs** go in `docs/specs/YYYY-MM-DD-<feature>.md`, committed as `docs:` on the feature branch.
+- **Plans** and other agent workflow artifacts **never** get committed into the tree.

@@ -1,0 +1,7 @@
+# Agent tooling: .claude/ is ignored except what is shared on purpose
+.claude/*
+!.claude/settings.json
+.worktrees/
+
+.venv/
+__pycache__/

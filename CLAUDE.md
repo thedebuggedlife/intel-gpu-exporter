@@ -54,7 +54,7 @@ Set through environment variables, none of which are documented in the README:
 
 ## Release
 
-Pushes publish images to `ghcr.io/<repo>`: `main` to `:rolling` and `dev` to `:rolling-dev`. There are no versioned tags. Renovate manages the `prometheus_client` pin, the Python base image, and the GitHub Actions versions.
+Publishing is paused: `.github/workflows/rolling.yaml` only runs on manual dispatch, so pushes publish nothing. Don't dispatch it or restore its push triggers unless asked. A dispatch publishes to `ghcr.io/<repo>`: `main` to `:rolling` and `dev` to `:rolling-dev`. There are no versioned tags. Renovate manages the `prometheus_client` pin, the Python base image, and the GitHub Actions versions.
 
 ## Agent workflow (superpowers + Paseo)
 
@@ -63,6 +63,6 @@ These are declared preferences; they override the superpowers skills' defaults.
 - **Worktrees are owned by Paseo** (`paseo.json` creates `.venv` from `requirements.txt` on creation; they live under `~/.paseo/worktrees/`). If already in a linked worktree, work there. Never use `EnterWorktree` or `git worktree add`. From the main checkout, create a Paseo worktree (`paseo worktree create --mode branch-off --new-branch <name>`, or `mcp__paseo__create_workspace`) — the main checkout may be shared with other agents. Don't bump the `requirements.txt` pin in a worktree, since Renovate owns it; if dependencies are missing, run `.venv/bin/pip install -r requirements.txt`.
 - **Baseline / verification** is `.venv/bin/python tests/replay_sample.py`. Run `docker build` only when changing the `Dockerfile`, `.dockerignore` or `requirements.txt`.
 - **Image contents:** the Dockerfile's `COPY . .` takes everything `.dockerignore` doesn't exclude, so add new non-runtime files there.
-- **Finishing a branch:** always push and open a PR against `origin` (`thedebuggedlife`), never `upstream`; never merge into `main` locally. Every merge publishes `:rolling`, including docs-only ones. Archive the worktree through Paseo, then delete the merged branch. If a worktree was removed outside Paseo, run `scripts/lumen-prune.sh`.
+- **Finishing a branch:** always push and open a PR against `origin` (`thedebuggedlife`), never `upstream`; never merge into `main` locally. Archive the worktree through Paseo, then delete the merged branch. If a worktree was removed outside Paseo, run `scripts/lumen-prune.sh`.
 - **Specs** go in `docs/specs/YYYY-MM-DD-<feature>.md`, committed as `docs:` on the feature branch.
 - **Plans** and other agent workflow artifacts **never** get committed into the tree.

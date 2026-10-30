@@ -1,8 +1,8 @@
 name: rolling
 
+# Push triggers removed: publishing is paused until the release flow is redesigned
 on:
-  push:
-    branches: ["main", "dev"]
+  workflow_dispatch:
 
 jobs:
   build:

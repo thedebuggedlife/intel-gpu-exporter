@@ -19,8 +19,8 @@ Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirem
 `intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the sample-replay test is the only way to exercise the code. It covers `update()` but not the stream parsing in `__main__`.
 
 ```bash
-# Paseo runs these three when it creates a worktree; pytest needs a newer Python than some systems ship, so uv provides CI's version
-uv venv --seed --python 3.13 .venv
+# Paseo runs these three when it creates a worktree. uv is required: it provides CI's Python, as pytest needs a newer one than some systems ship
+uv venv --clear --seed --python 3.13 .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/pip install -r requirements-dev.txt
 

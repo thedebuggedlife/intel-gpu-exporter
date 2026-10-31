@@ -1,6 +1,6 @@
 {
   "worktree": {
-    "setup": "uv venv --seed --python 3.13 .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/pip install -r requirements-dev.txt",
+    "setup": "uv venv --clear --seed --python 3.13 .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/pip install -r requirements-dev.txt",
     "teardown": "scripts/lumen-prune.sh \"$PASEO_WORKTREE_PATH\" || true"
   },
   "scripts": {

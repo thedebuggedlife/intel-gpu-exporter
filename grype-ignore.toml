@@ -1,0 +1,7 @@
+# Reviewed findings the vulnerability gate allows. An entry works through its
+# expires date, and every field is required:
+#
+# [[ignore]]
+# id = "CVE-2026-12345"
+# reason = "Why this finding doesn't affect the image."
+# expires = 2027-01-31

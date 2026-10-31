@@ -89,6 +89,14 @@ def test_listen_port_from_the_environment(fake_gpu, start_exporter):
     exporter.wait_for_metrics(igpu_up=1)
 
 
+def test_port_argument_wins_over_the_environment(fake_gpu, start_exporter):
+    fake_gpu.play(STREAM)
+    with socket.create_server(("127.0.0.1", 0)) as probe:
+        port = probe.getsockname()[1]
+
+    assert start_exporter(LISTEN_PORT=str(port)).port != port
+
+
 @pytest.mark.parametrize(
     ("variable", "value"),
     [

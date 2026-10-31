@@ -2,7 +2,7 @@ import copy
 import logging
 
 import pytest
-from helpers import DATA_JSON, FIXTURES, labelled, load_samples, scrape
+from helpers import DATA_JSON, FIXTURES, exposition, labelled, load_samples, scrape
 
 from intel_gpu_exporter.metrics import SampleCollector
 
@@ -33,7 +33,7 @@ def test_no_series_before_a_client_has_been_seen():
     collector = SampleCollector()
     collector.update(idle_sample())
 
-    assert counts(collector) == {}
+    assert CLIENTS not in exposition(collector)
 
 
 def test_capture_counts_the_client_then_reports_it_gone():
@@ -100,7 +100,7 @@ def test_entry_with_no_name_warns_and_keeps_the_rest(caplog):
     assert "clients.7.name" in caplog.text
 
 
-@pytest.mark.parametrize("name", [None, 5, "", ["ffmpeg"], "\ud800"])
+@pytest.mark.parametrize("name", [None, 5, "", ["ffmpeg"]])
 def test_name_that_cannot_be_a_label_warns_and_scrape_succeeds(name):
     sample = sample_with_clients("ffmpeg")
     sample["clients"]["7"] = {"name": name}
@@ -110,6 +110,22 @@ def test_name_that_cannot_be_a_label_warns_and_scrape_succeeds(name):
 
     assert counts(collector) == {FFMPEG: 1}
     assert scrape(collector)[WARNINGS] == 1
+
+
+@pytest.mark.parametrize(
+    ("name", "label"),
+    [
+        pytest.param("a\tb", "a\tb", id="tab-from-a-backslash-in-the-process-name"),
+        pytest.param("\ud800", "\\ud800", id="lone-surrogate"),
+    ],
+)
+def test_escape_the_tool_left_in_a_name_is_counted_without_a_warning(name, label):
+    collector = SampleCollector()
+
+    collector.update(sample_with_clients(name))
+
+    assert counts(collector) == {(label,): 1}
+    assert scrape(collector)[WARNINGS] == 0
 
 
 def test_entry_that_is_not_an_object_warns_and_keeps_the_rest(caplog):

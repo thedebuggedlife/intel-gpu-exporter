@@ -79,6 +79,14 @@ def test_a_later_gt_alone_satisfies_the_required_sections():
     assert labelled(collector, "igpu_gt_rc6") == {("1",): 12.25}
 
 
+def test_malformed_gt_sections_still_satisfy_the_required_section():
+    sample = multi_gt_sample()
+    sample["rc6-gt0"] = 5
+    sample["rc6-gt1"] = 5
+
+    assert scrape(collect(sample))[WARNINGS] == 2
+
+
 def test_each_section_is_required_on_its_own(caplog):
     sample = multi_gt_sample()
     del sample["frequency-gt0"]

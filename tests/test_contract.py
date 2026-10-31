@@ -57,6 +57,7 @@ def test_default_port(monkeypatch):
         raise Bound(port)
 
     monkeypatch.delenv("LISTEN_PORT", raising=False)
+    monkeypatch.delenv("REFRESH_PERIOD_MS", raising=False)
     monkeypatch.setattr(entry_point, "start_http_server", bind)
     monkeypatch.setattr(entry_point, "REGISTRY", CollectorRegistry())
 

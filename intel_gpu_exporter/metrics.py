@@ -192,9 +192,9 @@ class SampleCollector:
                 continue
 
             name = entry.get("name")
-            # isprintable also rejects lone surrogates, which a scrape can't encode
-            if isinstance(name, str) and name and name.isprintable():
-                counts[name] += 1
+            if isinstance(name, str) and name:
+                # A lone surrogate from a JSON escape can't be encoded by a scrape
+                counts[name.encode(errors="backslashreplace").decode()] += 1
             else:
                 name_key = f"{key}.name"
                 self.warn(name_key, f"Expected a name for {name_key!r}, got {name!r}")
@@ -203,7 +203,7 @@ class SampleCollector:
         if self._client_names:
             values = {name: float(counts[name]) for name in self._client_names}
             labelled["igpu_clients_count"] = (
-                "Clients with this name using the GPU",
+                "Processes with this name using the GPU",
                 "name",
                 values,
             )

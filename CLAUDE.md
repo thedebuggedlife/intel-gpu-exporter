@@ -10,7 +10,7 @@ A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` packa
 
 ## Commands
 
-`.github/workflows/ci.yaml` runs on every PR and on pushes to `main`, with two checks. `lint-and-test` runs `ruff` and `pytest` on Python 3.14, the version of Alpine's `python3` in the `Dockerfile`, so the two move together. `image-test` builds the image and runs `scripts/test-image.sh`. Every job declares explicit `permissions:` because default tokens are read-only, and every Action is pinned by full commit SHA with the version in a comment.
+`.github/workflows/ci.yaml` runs on every PR and on pushes to `main`, with two checks. `lint-and-test` runs `ruff` and `pytest` on Python 3.14, the version of Alpine's `python3` in the `Dockerfile`, so the two move together. Those steps live in the composite action `.github/actions/lint-and-test`, which the release gate shares. `image-test` builds the image and runs `scripts/test-image.sh`. Every job declares explicit `permissions:` because default tokens are read-only, and every Action is pinned by full commit SHA with the version in a comment. `tests/test_workflows.py` enforces this and the release safety properties by reading the YAML, which is why PyYAML is a dev pin.
 
 Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: `requirements.txt` is hash-locked, which would make pip reject the unhashed dev pins. It lists the wheel and sdist hashes by hand, with no `.in` file, in a format Dependabot's requirements updater supports. A new required dependency would need its own pin and hashes, and pip fails without them.
 
@@ -68,7 +68,19 @@ Set through environment variables, none of which are documented in the README. `
 
 ## Release
 
-Nothing publishes images: no workflow pushes to `ghcr.io`, and there are no versioned tags. Nothing updates dependencies automatically either, so the `prometheus_client` pin, the dev tool pins, the Alpine base digest and the Action SHAs only change by hand. Alpine packages, including `igt-gpu-tools`, change with any rebuild.
+`docs/specs/2026-10-31-release.md` is the design, including PR 7's weekly rebuild, `image.lock`, tracking issue and SARIF, which don't exist yet.
+
+**The repository variable `PUBLISH_ENABLED` switches publishing on, and only the value `true` does, in any case.** While it's off, release-please only opens and updates its PR, with no tag or release, nothing auto-merges that PR, and nothing pushes. Dependabot auto-merge ignores the switch. The coordinator owns it.
+
+The path is `release.yaml` on every push to `main`: release-please creates a draft release and a real tag from a merged release PR, then `publish.yaml` calls `gate.yaml` and its `push` job copies the tested image to `ghcr.io/thedebuggedlife/intel-gpu-exporter` and publishes the draft. A failed gate leaves a draft and a tag, and that version is burned: the next releasable commit takes the next number, and a tag is never moved. There are no release candidates, so the first version is `1.0.0`, and automated validation is the standard for every release.
+
+**The gate builds one OCI archive and everything derives from it.** `docker load` rejects that archive and the classic image store can't hold attestations, so `skopeo` converts it for the image test. grype scans the archive itself, and the push is `skopeo copy --all --preserve-digests`. Each step asserts the digest, so don't add a second build. `gate.yaml` holds no write permission or secret, so dispatching it is the dry run. Only `push` in `publish.yaml` and the job calling it in `release.yaml` may grant `packages: write`, because a called workflow can't exceed its caller.
+
+`scripts/release.py` decides tags and pushes: `X.Y.Z` is never overwritten, `latest` and `X.Y` only move forwards, and auto-merge refuses a release PR that raises the major version, or a first release above major 1. `scripts/hold-for-review.sh` then turns off any auto-merge already enabled, because GitHub won't when the app pushes, and requests review. `scripts/vuln_gate.py` fails on a fixable critical or high finding. `grype-ignore.toml` allows reviewed ones, each with a reason and an expiry date. `SCAN_FORCE_FAIL=true` forces that failure, for testing. `scripts/dependabot_policy.py` decides Dependabot PRs: patch, digest-only, and security patch or minor updates merge, and everything else is held the same way. `update-type` can't identify a digest update, so the title does, and any other Docker update must stay on the same `X.Y`. That workflow is `pull_request_target`, so it runs `main`'s copy with the ordinary Actions secret. It must never check out PR code.
+
+**Commit bodies are input to release-please.** A line starting `Release-As:`, `BREAKING CHANGE:` or a commit type like `feat:` counts, even inside the `<blockquote>` of a Dependabot PR. Keep them out of PR bodies, and clear the body when merging a held Dependabot PR by hand.
+
+`requirements.txt` and the Alpine digest update as `fix(deps):`, which gives a patch release. `requirements-dev.txt`, which Dependabot tells apart by the `dev` in its name, and Actions don't produce a release. Alpine packages, including `igt-gpu-tools`, change with any rebuild. Pinned by hand: grype's version and SHA-256 in `scripts/scan-image.sh` (verify the release's `checksums.txt` with `cosign verify-blob` first), and the BuildKit, SBOM generator and `registry` digests in `gate.yaml`.
 
 ## Agent workflow (superpowers + Paseo)
 

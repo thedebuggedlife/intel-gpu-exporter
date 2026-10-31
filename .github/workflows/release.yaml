@@ -1,0 +1,95 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release-please
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Create app token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: ${{ vars.PUBLISH_ENABLED != 'true' }}
+
+  auto-merge:
+    name: auto-merge
+    needs: release-please
+    if: vars.PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create app token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Merge the release PR or ask for review
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head release-please--branches--main \
+            --state open --json number,title --jq '.[0] // empty')
+          if [ -z "$pr" ]; then
+            echo "no open release PR"
+            exit 0
+          fi
+          number=$(jq --raw-output .number <<<"$pr")
+          title=$(jq --raw-output .title <<<"$pr")
+          if scripts/release.py check "${title##* }" --manifest .release-please-manifest.json; then
+            gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --auto --squash
+          else
+            scripts/hold-for-review.sh "$number"
+          fi
+
+  publish:
+    name: publish
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true' && vars.PUBLISH_ENABLED == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/publish.yaml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}

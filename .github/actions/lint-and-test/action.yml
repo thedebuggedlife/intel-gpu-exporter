@@ -1,0 +1,32 @@
+name: lint-and-test
+description: Runs ruff and pytest on the Python version the image ships
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: "3.14"
+        cache: pip
+        cache-dependency-path: |
+          requirements.txt
+          requirements-dev.txt
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Lint
+      shell: bash
+      run: ruff check .
+
+    - name: Check formatting
+      shell: bash
+      run: ruff format --check .
+
+    - name: Test
+      shell: bash
+      run: pytest

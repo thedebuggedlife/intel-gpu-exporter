@@ -70,8 +70,18 @@ class Script:
 
         signal.signal(signal.SIGTERM, leave)
 
+    def noise(self):
+        while True:
+            write(1, b"1 ")
+            time.sleep(SAMPLE_INTERVAL)
+
     def orphan(self):
         subprocess.Popen(["/bin/sleep", "30"])
+
+    def writing_orphan(self):
+        subprocess.Popen(
+            ["/bin/sh", "-c", "while :; do printf '{}'; /bin/sleep 0.02; done"]
+        )
 
 
 def main():

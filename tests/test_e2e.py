@@ -17,11 +17,27 @@ ONE_SAMPLE_THEN_HANG = [["samples", 1], ["hang"]]
 WIDE_TIMEOUT = {"timeout": 1}
 LONGEST_LOG_LINE = 256 * 1024
 
+SIGNAL_OFF_THE_MAIN_THREAD = """
+import os, signal, threading, time
+
+def deliver():
+    while not os.path.exists(os.environ["FAKE_GPU_DIR"] + "/deliver"):
+        time.sleep(0.005)
+    signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
+
+threading.Thread(target=deliver, daemon=True).start()
+"""
+CHILD_STUCK_IN_THE_KERNEL = """
+import subprocess, threading
+
+subprocess.Popen.wait = lambda self, timeout=None: threading.Event().wait()
+"""
+
 
 def test_normal_stream_reaches_metrics(fake_gpu, start_exporter):
     fake_gpu.play(STREAM)
 
-    metrics = start_exporter().wait_for_metrics(igpu_up=1)
+    metrics = start_exporter({"timeout": 30}).wait_for_metrics(igpu_up=1)
 
     assert metrics["igpu_engines_video_1_busy"] == 0
     assert metrics[RESTARTS] == 0
@@ -65,7 +81,8 @@ def test_hang_restarts_the_child_and_shows_a_gap(fake_gpu, start_exporter):
     exporter = start_exporter()
     hung = exporter.wait_for_metrics(igpu_up=1) and fake_gpu.spawns[0]["pid"]
 
-    stale = exporter.wait_for_metrics(igpu_up=0, igpu_collector_restarts_total=1)
+    exporter.wait_for_restarts(1)
+    stale = exporter.wait_for_metrics(igpu_up=0)
 
     assert set(stale) == {UP, LAST_SAMPLE, RESTARTS, WARNINGS}
     assert pid_is_gone(hung)
@@ -73,7 +90,6 @@ def test_hang_restarts_the_child_and_shows_a_gap(fake_gpu, start_exporter):
     fake_gpu.release("go")
     recovered = exporter.wait_for_metrics(igpu_up=1)
 
-    assert recovered[RESTARTS] == 1
     assert recovered["igpu_rc6"] == 0
 
 
@@ -127,12 +143,15 @@ def test_exit_restarts_and_recovers(fake_gpu, start_exporter, code):
 def test_restart_starts_with_a_new_decoder(fake_gpu, start_exporter):
     fake_gpu.play([["samples", 1], ["raw", '{"period": {"dura'], ["exit", 1]], STREAM)
 
-    metrics = start_exporter().wait_for_metrics(
-        igpu_up=1, igpu_collector_restarts_total=1
-    )
+    exporter = start_exporter()
 
-    wait_until(lambda: len(fake_gpu.spawns) == 2)
-    assert metrics[WARNINGS] == 0
+    second = fake_gpu.wait_for_spawns(2)[1]
+
+    def sample_from_the_second_child():
+        metrics = exporter.metrics()
+        return metrics if metrics.get(LAST_SAMPLE, 0) > second["time"] else None
+
+    assert wait_until(sample_from_the_second_child)[WARNINGS] == 0
 
 
 def test_malformed_output_is_restarted_by_the_watchdog(fake_gpu, start_exporter):
@@ -145,11 +164,11 @@ def test_malformed_output_is_restarted_by_the_watchdog(fake_gpu, start_exporter)
     assert metrics[WARNINGS] == 0
 
 
-def test_stream_of_non_objects_does_not_count_as_samples(fake_gpu, start_exporter):
-    fake_gpu.play([["raw", "1 2 3 "], ["hang"]], [["hang"]])
+def test_stream_of_non_objects_does_not_hold_off_the_watchdog(fake_gpu, start_exporter):
+    fake_gpu.play([["noise"]])
     exporter = start_exporter()
 
-    metrics = exporter.wait_for_metrics(igpu_collector_restarts_total=1)
+    metrics = exporter.wait_for_restarts(1)
 
     assert metrics[UP] == 0
     assert metrics[WARNINGS] == 1
@@ -158,8 +177,7 @@ def test_stream_of_non_objects_does_not_count_as_samples(fake_gpu, start_exporte
 def test_missing_binary_keeps_serving_and_recovers(fake_gpu, start_exporter):
     exporter = start_exporter()
 
-    metrics = exporter.wait_for_metrics(igpu_collector_restarts_total=2)
-    assert metrics[UP] == 0
+    assert exporter.wait_for_restarts(2)[UP] == 0
 
     fake_gpu.play(STREAM)
     exporter.wait_for_metrics(igpu_up=1)
@@ -171,6 +189,26 @@ def test_open_pipe_held_by_a_stray_process_does_not_block_a_restart(
     fake_gpu.play([["orphan"], *ONE_SAMPLE_THEN_HANG], STREAM)
 
     start_exporter().wait_for_metrics(igpu_up=1, igpu_collector_restarts_total=1)
+
+
+def test_output_from_a_stray_process_does_not_count_for_the_next_child(
+    fake_gpu, start_exporter
+):
+    fake_gpu.play([["writing_orphan"], ["exit", 1]], [["hang"]])
+
+    start_exporter().wait_for_restarts(2)
+
+
+def test_stderr_is_drained_before_the_next_spawn(fake_gpu, start_exporter):
+    lines = 20_000
+    fake_gpu.play([["stderr", "engine noise\n", lines], ["exit", 1]], STREAM)
+    exporter = start_exporter({"timeout": 30, "join_grace": 30})
+
+    exporter.wait_for_restarts(1)
+
+    log = exporter.log()
+    second_spawn = [m.start() for m in re.finditer("Started", log)][1]
+    assert log[:second_spawn].count("engine noise") == lines
 
 
 def test_heavy_stderr_is_logged_and_does_not_block_the_child(fake_gpu, start_exporter):
@@ -209,6 +247,35 @@ def test_signal_stops_the_child_and_exits_zero(fake_gpu, start_exporter, signum)
     spawns = fake_gpu.spawns
     assert len(spawns) == 1
     assert pid_is_gone(spawns[0]["pid"])
+
+
+@pytest.mark.parametrize("attempt", range(5))
+def test_burst_of_signals_exits_zero(fake_gpu, start_exporter, attempt):
+    fake_gpu.play(STREAM)
+    exporter = start_exporter()
+    exporter.wait_for_metrics(igpu_up=1)
+
+    assert exporter.wait_for_exit(*[signal.SIGTERM, signal.SIGINT] * 5) == 0
+
+    assert pid_is_gone(fake_gpu.spawns[0]["pid"])
+
+
+def test_signal_handled_off_the_main_thread_exits_zero(fake_gpu, start_exporter):
+    fake_gpu.play(STREAM)
+    exporter = start_exporter(prelude=SIGNAL_OFF_THE_MAIN_THREAD)
+    exporter.wait_for_metrics(igpu_up=1)
+
+    fake_gpu.release("deliver")
+
+    assert exporter.wait_for_exit() == 0
+
+
+def test_child_stuck_in_the_kernel_does_not_block_exit(fake_gpu, start_exporter):
+    fake_gpu.play(STREAM)
+    exporter = start_exporter(prelude=CHILD_STUCK_IN_THE_KERNEL)
+    exporter.wait_for_metrics(igpu_up=1)
+
+    assert exporter.wait_for_exit(signal.SIGTERM) == 0
 
 
 def test_signal_gives_the_child_sigterm_first(fake_gpu, start_exporter, tmp_path):

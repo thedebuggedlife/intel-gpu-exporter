@@ -18,6 +18,7 @@ class Timing:
     backoff_initial: float = 1.0
     backoff_cap: float = 60.0
     stop_grace: float = 5.0
+    join_grace: float = 1.0
     poll: float = 0.25
 
 
@@ -71,6 +72,7 @@ class Supervisor:
         self._collector = collector
         self._stop = stop
         self._timing = timing
+        self._child = None
 
     def run(self):
         backoff = Backoff(self._timing.backoff_initial, self._timing.backoff_cap)
@@ -89,11 +91,10 @@ class Supervisor:
             log.error("Can't start intel_gpu_top: %s", error)
             return
         log.info("Started %s", self._argv)
+        self._child = process
 
         readers = [
-            threading.Thread(
-                target=self._read_stdout, args=(process.stdout,), daemon=True
-            ),
+            threading.Thread(target=self._read_stdout, args=(process,), daemon=True),
             threading.Thread(target=read_stderr, args=(process.stderr,), daemon=True),
         ]
         for reader in readers:
@@ -102,16 +103,17 @@ class Supervisor:
         self._watch(process, spawned)
 
         for reader in readers:
-            reader.join(self._timing.stop_grace)
+            reader.join(self._timing.join_grace)
+        self._child = None
 
         last_sample = self._collector.last_sample
         if last_sample is not None and last_sample >= spawned:
             backoff.reset()
 
-    def _read_stdout(self, stream):
+    def _read_stdout(self, process):
         decoder = StreamDecoder(self._collector.warn)
-        with stream:
-            while chunk := stream.read(CHUNK_SIZE):
+        with process.stdout as stream:
+            while (chunk := stream.read(CHUNK_SIZE)) and process is self._child:
                 for value in decoder.feed(chunk):
                     log.debug(value)
                     self._collector.update(value)

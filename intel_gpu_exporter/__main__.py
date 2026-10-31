@@ -28,17 +28,28 @@ def main(port=8080, timing=None):
     server, _ = start_http_server(port)
     log.info("Listening on port %d", server.server_port)
 
-    stop = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    requested = False
 
+    def request_stop(*_):
+        nonlocal requested
+        requested = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+
+    stop = threading.Event()
     supervisor = Supervisor(
         build_command(period, os.getenv("DEVICE")), collector, stop, timing
     )
     watchdog = threading.Thread(target=supervisor.run, name="watchdog", daemon=True)
     watchdog.start()
-    # Stay out of Event.wait() here: Event.set() in a handler can deadlock against it
-    watchdog.join()
+    # Timed, because a signal taken by another thread doesn't wake an untimed join
+    while watchdog.is_alive() and not requested:
+        watchdog.join(timing.poll)
+    # Outside the handler, because Event.set() can deadlock if a handler re-enters it
+    stop.set()
+    # Bounded, so a child stuck in the kernel can't hold up exit
+    watchdog.join(2 * timing.stop_grace)
 
 
 if __name__ == "__main__":

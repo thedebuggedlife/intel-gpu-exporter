@@ -16,6 +16,7 @@ FAST_TIMING = {
     "backoff_initial": 0.02,
     "backoff_cap": 0.16,
     "stop_grace": 0.3,
+    "join_grace": 0.1,
     "poll": 0.01,
 }
 

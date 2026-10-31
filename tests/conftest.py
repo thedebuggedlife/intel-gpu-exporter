@@ -14,6 +14,7 @@ from prometheus_client.parser import text_string_to_metric_families
 REPO = TESTS.parent
 FAKE = TESTS / "fake_intel_gpu_top.py"
 LAUNCHER = """
+{prelude}
 from intel_gpu_exporter.__main__ import main
 from intel_gpu_exporter.supervisor import Timing
 main(port=0, timing=Timing(**{timing!r}))
@@ -92,8 +93,18 @@ class Exporter:
 
         return wait_until(matches)
 
-    def wait_for_exit(self, signum):
-        self.process.send_signal(signum)
+    def wait_for_restarts(self, count):
+        def reached():
+            metrics = self.metrics()
+            return (
+                metrics if metrics["igpu_collector_restarts_total"] >= count else None
+            )
+
+        return wait_until(reached)
+
+    def wait_for_exit(self, *signums):
+        for signum in signums:
+            self.process.send_signal(signum)
         return self.process.wait(WAIT_LIMIT)
 
 
@@ -106,12 +117,12 @@ def fake_gpu(tmp_path):
 def start_exporter(fake_gpu, tmp_path):
     processes = []
 
-    def start(timing=None, **env):
+    def start(timing=None, prelude="", **env):
         log_path = tmp_path / "exporter.log"
         timing = {**FAST_TIMING, **(timing or {})}
         with log_path.open("wb") as log:
             process = subprocess.Popen(
-                [sys.executable, "-c", LAUNCHER.format(timing=timing)],
+                [sys.executable, "-c", LAUNCHER.format(prelude=prelude, timing=timing)],
                 cwd=REPO,
                 env={
                     **os.environ,

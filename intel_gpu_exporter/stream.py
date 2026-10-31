@@ -23,7 +23,7 @@ class StreamDecoder:
             try:
                 value, position = self._json.raw_decode(self._buffer, position)
             # ValueError covers truncated and malformed input and over-long integers
-            except (ValueError, RecursionError):
+            except ValueError, RecursionError:
                 break
             values.append(value)
         self._buffer = self._buffer[position:]

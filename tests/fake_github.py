@@ -47,9 +47,7 @@ def pull(number):
 def api():
     method = option("--method") or "GET"
     payload = json.load(sys.stdin) if option("--input") == "-" else None
-    skip = {"--method", "--input", "-H"}
-    words = iter(argv[1:])
-    path = next(w for w in words if not (w in skip and next(words)) and w[0] != "-")
+    path = next(word for word in argv if word.startswith("repos/"))
     route = path.split("/", 3)[3]
     if method == "GET":
         return api_get(route)

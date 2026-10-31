@@ -44,11 +44,11 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 **There is one stream parser, `StreamDecoder` in `stream.py`.** It reads `stdout` in chunks and calls `raw_decode` over a text buffer, skipping whitespace, `[`, `]` and `,` between values. It never reads by line, because a sample's closing `}` has no trailing newline, and a line reader would deliver every sample one period late. Truncated and malformed input look the same to `raw_decode`, so the decoder waits for more data and the watchdog restarts the child. There is no resynchronisation, and each child gets a new decoder.
 
-**`supervisor.py` owns the child.** The watchdog thread runs `Supervisor.run()`, with one `stdout` and one `stderr` reader per child. Any exit, kill or failed spawn goes through the same capped backoff. The stall deadline runs from the later of this child's spawn and the last sample, so a new child always gets a full timeout. `igpu_up` uses the age of the last sample overall, and only an object counts as a sample.
+**`supervisor.py` owns the child.** The watchdog thread runs `Supervisor.run()`, with one `stdout` and one `stderr` reader per child. Any exit, kill or failed spawn goes through the same capped backoff. The stall deadline runs from the later of this child's spawn and the last sample, so a new child always gets a full timeout. `igpu_up` uses the age of the last sample overall, and only an object counts as a sample. Only the current child's reader may write to the collector, which is why `update()` needs no lock.
 
 **While `igpu_up` is 0, only the four health metrics are served,** so a hang shows as a gap rather than a flat line. `SampleCollector` keeps the last sample, and `collect()` decides what to serve at scrape time.
 
-**The main thread only joins the watchdog.** The signal handlers set the stop event, and `Event.set()` in a handler can deadlock against `Event.wait()` on the same thread.
+**Signal handlers only record the request.** The main thread checks it in a timed join on the watchdog and sets the stop event itself. A signal taken by another thread doesn't wake an untimed join, and `Event.set()` can deadlock if a second handler interrupts it. Don't simplify either away: both were real hangs, and `tests/test_e2e.py` covers them.
 
 ## Configuration
 

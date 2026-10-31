@@ -125,5 +125,13 @@ def test_each_ecosystem_is_weekly_with_a_cooldown(updates, ecosystem):
     entry = updates[ecosystem]
     assert entry["schedule"] == {"interval": "weekly"}
     assert entry["cooldown"] == {"default-days": 7}
-    assert entry["directory"] == "/"
     assert "groups" not in entry
+
+
+@pytest.mark.parametrize("ecosystem", ["pip", "docker"])
+def test_manifests_are_at_the_root(updates, ecosystem):
+    assert updates[ecosystem]["directory"] == "/"
+
+
+def test_actions_cover_workflows_and_composite_actions(updates):
+    assert updates["github-actions"]["directories"] == ["/", "/.github/actions/*"]

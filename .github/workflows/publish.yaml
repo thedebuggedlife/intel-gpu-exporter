@@ -58,6 +58,11 @@ jobs:
           name: image-lock
           path: built
 
+      - name: Attach the image's contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" built/image.lock --clobber --repo "$GITHUB_REPOSITORY"
+
       - name: Log in to GHCR
         env:
           TOKEN: ${{ github.token }}
@@ -70,11 +75,6 @@ jobs:
           scripts/release.py publish --repository ghcr.io/thedebuggedlife/intel-gpu-exporter \
             --archive image.tar --tag "$TAG" --expected-digest "$DIGEST"
           echo "Published \`$TAG\` as \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
-
-      - name: Attach the image's contents
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" built/image.lock --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Publish the GitHub release
         env:

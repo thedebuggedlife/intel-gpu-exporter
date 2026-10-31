@@ -2,6 +2,8 @@ import json
 import os
 import stat
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from helpers import REPO, TESTS
@@ -17,7 +19,7 @@ class Tracker:
         self.bin_dir = bin_dir
         self.state = {"calls": [], "fail": [], "labels": [], "issues": []}
 
-    def issue(self, state="open", labels=(LABEL,)):
+    def issue(self, state="open", labels=(LABEL,), **fields):
         number = len(self.state["issues"]) + 100
         self.state["issues"].append(
             {
@@ -28,13 +30,20 @@ class Tracker:
                 "body": "existing",
                 "comments": [],
             }
+            | fields
         )
         return number
 
     def run(self, workflow="rebuild"):
         self.path.write_text(json.dumps(self.state))
         env = os.environ | {
-            "PATH": f"{self.bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "PATH": os.pathsep.join(
+                [
+                    str(self.bin_dir),
+                    str(Path(sys.executable).parent),
+                    os.environ["PATH"],
+                ]
+            ),
             "FAKE_GITHUB_STATE": str(self.path),
             "GITHUB_REPOSITORY": "thedebuggedlife/intel-gpu-exporter",
             "GITHUB_SERVER_URL": "https://github.com",
@@ -120,6 +129,14 @@ def test_oldest_open_issue_gets_the_comment_if_two_exist(tracker):
     assert len(target["comments"]) == 1
 
 
+def test_a_labelled_pull_request_is_not_the_tracking_issue(tracker):
+    pull = tracker.issue(pull_request={"url": "a pull request"})
+    tracker.run()
+    assert tracker.state["issues"][0]["number"] == pull
+    assert tracker.state["issues"][0]["comments"] == []
+    assert len(tracker.open_issues) == 2
+
+
 def test_a_failed_label_update_does_not_stop_the_report(tracker):
     tracker.state["labels"] = [LABEL]
     tracker.state["fail"] = ["label create"]
@@ -128,12 +145,12 @@ def test_a_failed_label_update_does_not_stop_the_report(tracker):
 
 
 def test_a_failed_lookup_opens_nothing_and_fails_loudly(tracker):
-    tracker.state["fail"] = ["issue list"]
+    tracker.state["fail"] = ["/issues?"]
     result = tracker.run()
     assert result.returncode != 0
     assert tracker.open_issues == []
 
 
 def test_a_failed_report_names_the_run_in_the_log(tracker):
-    tracker.state["fail"] = ["issue list"]
+    tracker.state["fail"] = ["/issues?"]
     assert RUN_URL in tracker.run().stdout

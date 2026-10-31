@@ -7,7 +7,10 @@ command whose joined argv contains it.
 
 import json
 import os
+import subprocess
 import sys
+from datetime import UTC, datetime
+from urllib.parse import parse_qs
 
 state_path = os.environ["FAKE_GITHUB_STATE"]
 with open(state_path) as f:
@@ -44,23 +47,54 @@ def pull(number):
     return next(p for p in state["pulls"] if p["number"] == int(number))
 
 
+def listed_pulls(query):
+    head = query.get("head", [""])[0]
+    if ":" not in head:
+        # GitHub ignores a head filter with no owner and lists every PR
+        return [{"number": p["number"]} for p in state["pulls"]]
+    _, branch = head.split(":", 1)
+    return [
+        {"number": p["number"]}
+        for p in state["pulls"]
+        if p["head"] == branch
+        and not p["isCrossRepository"]
+        and p["state"] == query["state"][0]
+    ]
+
+
+def listed_issues(query):
+    found = [
+        i
+        for i in state["issues"]
+        if i["state"] == query["state"][0] and query["labels"][0] in i["labels"]
+    ]
+    return sorted(
+        found, key=lambda i: i["number"], reverse=query["direction"][0] == "desc"
+    )
+
+
 def api():
     method = option("--method") or "GET"
     payload = json.load(sys.stdin) if option("--input") == "-" else None
     path = next(word for word in argv if word.startswith("repos/"))
     route = path.split("/", 3)[3]
     if method == "GET":
-        return api_get(route)
+        route, _, query = route.partition("?")
+        return api_get(route, parse_qs(query))
     return api_write(method, route, payload)
 
 
-def api_get(route):
+def api_get(route, query):
     if route == "git/ref/heads/main":
         return {"object": {"sha": state["refs"]["main"]}}
-    if route.startswith("contents/image.lock?ref="):
-        ref = route.split("=", 1)[1]
+    if route == "contents/image.lock":
+        ref = query["ref"][0]
         sys.stdout.write(state["locks"][state["refs"].get(ref, ref)])
         return None
+    if route == "pulls":
+        return listed_pulls(query)
+    if route == "issues":
+        return listed_issues(query)
     if route == "releases":
         assert "--paginate" in argv and "--slurp" in argv
         return [state["releases"]]
@@ -117,6 +151,7 @@ def api_write(method, route, payload):
             "isCrossRepository": False,
             "autoMergeRequest": None,
             "files": [{"path": "image.lock"}],
+            "commits": [{"committedDate": datetime.now(UTC).isoformat()}],
         }
         state["next_pull"] += 1
         state["pulls"].append(created)
@@ -131,13 +166,11 @@ def api_write(method, route, payload):
 
 
 def pr():
-    if argv[1] == "list":
+    if argv[1] == "view":
         keep = argv[argv.index("--json") + 1].split(",")
-        found = open_pulls(option("--head"))
-        print(json.dumps([{k: p[k] for k in keep} for p in found]))
-    elif argv[1] == "view":
-        print("true" if pull(argv[2])["autoMergeRequest"] else "false")
-    elif argv[1] == "merge" and "--disable-auto" in argv:
+        target = pull(argv[2])
+        return {k: target[k] for k in keep}
+    if argv[1] == "merge" and "--disable-auto" in argv:
         pull(argv[2])["autoMergeRequest"] = None
     elif argv[1] == "merge":
         assert "--auto" in argv and "--squash" in argv
@@ -155,6 +188,7 @@ def pr():
             del state["refs"][target["head"]]
     else:
         refuse(f"unexpected pr command {argv[1]}")
+    return None
 
 
 def label():
@@ -165,15 +199,7 @@ def label():
 
 def issue():
     label_name = option("--label")
-    if argv[1] == "list":
-        found = [
-            i["number"]
-            for i in state["issues"]
-            if i["state"] == "open" and label_name in i["labels"]
-        ]
-        if found:
-            print(min(found))
-    elif argv[1] == "create":
+    if argv[1] == "create":
         if label_name not in state["labels"]:
             refuse(f"could not add label: '{label_name}' not found")
         state["issues"].append(
@@ -199,5 +225,16 @@ if any(text in joined for text in state["fail"]):
 
 output = {"api": api, "pr": pr, "label": label, "issue": issue}[argv[0]]()
 save()
-if output is not None:
+if output is not None and "--jq" in argv:
+    # gh's --jq is real jq, so the filters under test run for real here
+    sys.stdout.write(
+        subprocess.run(
+            ["jq", "--raw-output", option("--jq")],
+            input=json.dumps(output),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+elif output is not None:
     print(json.dumps(output))

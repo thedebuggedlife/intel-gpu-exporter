@@ -4,6 +4,7 @@ import re
 import stat
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -68,11 +69,12 @@ class Repository:
                 "isCrossRepository": False,
                 "autoMergeRequest": None,
                 "files": [{"path": "image.lock"}],
+                "commits": [{"committedDate": datetime.now(UTC).isoformat()}],
             }
             | fields
         )
 
-    def run(self, lock=NEW):
+    def run(self, lock=NEW, built=None):
         self.lock_file.write_text(lock)
         self.path.write_text(json.dumps(self.state))
         env = os.environ | {
@@ -85,6 +87,7 @@ class Repository:
             ),
             "FAKE_GITHUB_STATE": str(self.path),
             "GITHUB_REPOSITORY": REPOSITORY,
+            "GITHUB_SHA": built or self.state["refs"]["main"],
         }
         result = subprocess.run(
             [str(SCRIPT), "--lock", str(self.lock_file)],
@@ -105,7 +108,7 @@ class Repository:
         return self.state["locks"][self.state["refs"][BRANCH]]
 
     def writes(self):
-        reads = ("issue list", "pr list", "pr view")
+        reads = ("pr view",)
         for call in self.state["calls"]:
             joined = " ".join(call)
             if joined.startswith(reads) or (
@@ -113,6 +116,11 @@ class Repository:
             ):
                 continue
             yield joined
+
+
+def days_ago(days):
+    moment = datetime.now(UTC) - timedelta(days=days)
+    return [{"committedDate": moment.strftime("%Y-%m-%dT%H:%M:%SZ")}]
 
 
 @pytest.fixture
@@ -270,6 +278,66 @@ def test_stale_pr_is_closed_when_the_image_matches_main_again(repository):
     assert repository.run(COMMITTED).returncode == 0
     assert repository.open_pulls == []
     assert BRANCH not in repository.state["refs"]
+
+
+def test_pr_from_an_earlier_run_that_has_not_merged_fails_the_run(repository):
+    repository.pull(autoMergeRequest={"commitHeadline": FIX_TITLE}, commits=days_ago(7))
+    result = repository.run(NEW)
+    assert result.returncode != 0
+    assert "#7" in result.stderr
+    assert list(repository.writes()) == []
+
+
+def test_stuck_pr_is_not_armed_again_after_a_person_disarmed_it(repository):
+    repository.pull(commits=days_ago(7))
+    assert repository.run(NEW).returncode != 0
+    assert repository.open_pulls[0]["autoMergeRequest"] is None
+
+
+def test_new_change_on_an_old_pr_is_an_update_not_a_stuck_pr(repository):
+    repository.pull(commits=days_ago(7))
+    assert repository.run(NEWER).returncode == 0
+    assert repository.branch_lock == NEWER
+
+
+def test_row_change_on_an_old_pr_is_an_update_not_a_stuck_pr(repository):
+    repository.pull(autoMergeRequest={"commitHeadline": FIX_TITLE}, commits=days_ago(7))
+    repository.release("v1.0.0", NEW)
+    assert repository.run(NEW).returncode == 0
+    assert repository.open_pulls[0]["title"] == CHORE_TITLE
+
+
+def test_held_pr_fails_the_run_once_it_has_waited(repository):
+    repository.pull(files=[{"path": "Dockerfile"}], commits=days_ago(7))
+    assert repository.run(NEW).returncode != 0
+    assert repository.state["review_requests"] == [7]
+
+
+def test_a_build_of_an_older_commit_changes_nothing(repository):
+    result = repository.run(NEW, built="older-sha")
+    assert result.returncode == 0
+    assert "older-sha" in result.stdout
+    assert list(repository.writes()) == []
+
+
+def test_a_build_of_an_older_commit_does_not_close_a_pr(repository):
+    repository.pull()
+    repository.run(COMMITTED, built="older-sha")
+    assert len(repository.open_pulls) == 1
+
+
+def test_a_branch_with_a_longer_name_is_not_mistaken_for_ours(repository):
+    repository.state["refs"][f"{BRANCH}-old"] = "other-sha"
+    repository.state["locks"]["other-sha"] = NEWER
+    assert repository.run(NEW).returncode == 0
+    assert repository.state["refs"][f"{BRANCH}-old"] == "other-sha"
+    assert repository.branch_lock == NEW
+
+
+def test_closed_pr_is_not_reused(repository):
+    repository.pull(state="closed")
+    assert repository.run(NEW).returncode == 0
+    assert [p["number"] for p in repository.open_pulls] == [50]
 
 
 def test_fork_pr_on_the_same_branch_name_is_never_touched(repository):

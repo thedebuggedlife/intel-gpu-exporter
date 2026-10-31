@@ -14,8 +14,9 @@ gh label create "$label" --repo "$GITHUB_REPOSITORY" --force \
     --description "A scheduled or release run needs a person" --color B60205 ||
     echo "couldn't create the label, so it has to exist already"
 
-number=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open \
-    --json number --jq 'map(.number) | min // empty')
+# Listed rather than searched, because search can miss an issue opened seconds ago
+number=$(gh api "repos/$GITHUB_REPOSITORY/issues?labels=$label&state=open&sort=created&direction=asc" \
+    --jq 'map(select(.pull_request | not)) | .[0].number // empty')
 
 if [ -n "$number" ]; then
     gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$report"

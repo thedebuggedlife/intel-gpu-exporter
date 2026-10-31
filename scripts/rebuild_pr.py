@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from image_lock import LOCK_NAME, decide
@@ -17,6 +18,7 @@ CLOSING_NOTE = "The rebuilt image matches the committed `image.lock` again."
 RAW = "Accept: application/vnd.github.raw+json"
 ASSET = "Accept: application/octet-stream"
 HOLD = Path(__file__).with_name("hold-for-review.sh")
+STUCK_AFTER = timedelta(days=1)
 
 
 class GitHubError(Exception):
@@ -69,22 +71,20 @@ def published_lock(repo: str) -> str | None:
 
 
 def open_pull(repo: str) -> dict | None:
-    pulls = json.loads(
-        gh(
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--head",
-            BRANCH,
-            "--state",
-            "open",
-            "--json",
-            "number,title,isCrossRepository,autoMergeRequest,files",
-        )
+    # gh pr list --head also matches a fork's branch, which anyone can name the same
+    owner = repo.split("/")[0]
+    found = read(f"repos/{repo}/pulls?head={owner}:{BRANCH}&state=open")
+    if not found:
+        return None
+    fields = "number,title,autoMergeRequest,files,commits"
+    return json.loads(
+        gh("pr", "view", str(found[0]["number"]), "--repo", repo, "--json", fields)
     )
-    # --head also matches a fork's branch of the same name, which anyone can create
-    return next((p for p in pulls if not p["isCrossRepository"]), None)
+
+
+def is_stuck(pull: dict) -> bool:
+    latest = datetime.fromisoformat(pull["commits"][-1]["committedDate"])
+    return datetime.now(UTC) - latest > STUCK_AFTER
 
 
 def commit_lock(repo: str, base: str, lock: str, message: str) -> str:
@@ -153,25 +153,34 @@ def close(repo: str, number: int) -> None:
     )
 
 
-def apply(repo: str, new: str) -> str:
+def apply(repo: str, new: str, built: str) -> str:
     base = read(f"repos/{repo}/git/ref/heads/main")["object"]["sha"]
+    if built != base:
+        return f"skipped: this run built {built}, and main is now {base}"
     title = decide(new, read_lock(repo, base), published_lock(repo))
     pull = open_pull(repo)
 
     if pull is not None and {f["path"] for f in pull["files"]} - {LOCK_NAME}:
-        hold(pull["number"])
-        return f"held #{pull['number']}, which changes more than {LOCK_NAME}"
+        number = pull["number"]
+        hold(number)
+        if is_stuck(pull):
+            raise GitHubError(f"#{number} is held, which blocks the rebuild")
+        return f"held #{number}, which changes more than {LOCK_NAME}"
     if title is None:
         if pull is None:
             return "no change"
         close(repo, pull["number"])
         return f"closed #{pull['number']}"
 
+    current = pull is not None and read_lock(repo, BRANCH) == new
+    if current and pull["title"] == title and is_stuck(pull):
+        raise GitHubError(f"#{pull['number']} hasn't merged since an earlier run")
+
     armed = pull["autoMergeRequest"] if pull is not None else None
     if armed is not None and armed["commitHeadline"] != title:
         disarm(repo, pull["number"])
         armed = None
-    if pull is None or read_lock(repo, BRANCH) != new:
+    if not current:
         point_branch(repo, commit_lock(repo, base, new, title))
     if pull is None:
         created = write(
@@ -194,7 +203,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lock", required=True, help="the image.lock just generated")
     args = parser.parse_args(argv)
     try:
-        print(apply(os.environ["GITHUB_REPOSITORY"], Path(args.lock).read_text()))
+        lock = Path(args.lock).read_text()
+        print(apply(os.environ["GITHUB_REPOSITORY"], lock, os.environ["GITHUB_SHA"]))
     except GitHubError as error:
         print(error, file=sys.stderr)
         return 1

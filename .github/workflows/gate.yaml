@@ -111,6 +111,7 @@ jobs:
           name: image-lock
           path: built/image.lock
           if-no-files-found: error
+          overwrite: true
           retention-days: 1
 
       - name: Scan image
@@ -126,6 +127,7 @@ jobs:
           name: sarif
           path: built/grype.sarif
           if-no-files-found: warn
+          overwrite: true
           retention-days: 1
 
       - name: Rehearse the push

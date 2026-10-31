@@ -324,7 +324,11 @@ def test_auto_merge_checks_its_credentials_first():
 def test_release_pr_lookup_ignores_a_fork_using_the_same_branch_name():
     steps = load("release.yaml")["jobs"]["auto-merge"]["steps"]
     run = next(s for s in steps if "gh pr merge" in s.get("run", ""))["run"]
-    assert "select(.isCrossRepository | not)" in run
+    assert (
+        "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:"
+        "release-please--branches--main&state=open" in run
+    )
+    assert "gh pr list" not in run
 
 
 def gate_steps():
@@ -358,6 +362,11 @@ def test_gate_uploads_the_lock_and_fails_without_one():
     assert upload["with"]["if-no-files-found"] == "error"
 
 
+@pytest.mark.parametrize("name", ["image-lock", "sarif"])
+def test_gate_artifacts_uploaded_before_it_can_fail_allow_a_re_run(name):
+    assert artifact_upload(name)["with"]["overwrite"] is True
+
+
 def test_gate_keeps_scan_results_when_the_scan_fails():
     upload = artifact_upload("sarif")
     assert upload["if"] == "${{ !cancelled() }}"
@@ -385,12 +394,12 @@ def test_published_release_carries_the_lock_the_gate_recorded():
     assert "--clobber" in upload["run"]
 
 
-def test_lock_is_attached_after_the_push_and_before_the_draft_is_published():
+def test_lock_is_attached_while_the_release_is_still_only_a_draft():
     runs = [s.get("run", "") for s in publish_steps()]
-    push = next(i for i, r in enumerate(runs) if "release.py publish" in r)
     attach = next(i for i, r in enumerate(runs) if "gh release upload" in r)
+    push = next(i for i, r in enumerate(runs) if "release.py publish" in r)
     edit = next(i for i, r in enumerate(runs) if "--draft=false" in r)
-    assert push < attach < edit
+    assert attach < push < edit
 
 
 REBUILD = "rebuild.yaml"
@@ -502,11 +511,11 @@ def test_tracker_watches_every_job_that_can_fail(workflow):
 
 @pytest.mark.parametrize("workflow", TRACKED)
 def test_tracker_fires_on_a_failure_or_a_timeout(workflow):
-    condition = load(workflow)["jobs"]["track-failure"]["if"]
-    assert condition.startswith("always() && ")
-    assert "contains(needs.*.result, 'failure')" in condition
-    assert "contains(needs.*.result, 'cancelled')" in condition
-    assert "github.ref == 'refs/heads/main'" in condition
+    assert load(workflow)["jobs"]["track-failure"]["if"] == (
+        "always() && github.ref == 'refs/heads/main' && "
+        "(contains(needs.*.result, 'failure') || "
+        "contains(needs.*.result, 'cancelled'))"
+    )
 
 
 @pytest.mark.parametrize("workflow", TRACKED)

@@ -69,9 +69,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head release-please--branches--main \
-            --state open --json number,title,isCrossRepository \
-            --jq 'map(select(.isCrossRepository | not)) | .[0] // empty')
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:release-please--branches--main&state=open" \
+            --jq '.[0] // empty | {number, title}')
           if [ -z "$pr" ]; then
             echo "no open release PR"
             exit 0

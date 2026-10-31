@@ -8,11 +8,19 @@ import subprocess
 import sys
 
 import pytest
-from helpers import FAST_TIMING, FIXTURES, TESTS, WAIT_LIMIT, load_samples, wait_until
+from helpers import (
+    FAST_TIMING,
+    FIXTURES,
+    REPO,
+    TESTS,
+    WAIT_LIMIT,
+    load_samples,
+    wait_until,
+)
 from prometheus_client.parser import text_string_to_metric_families
 
-REPO = TESTS.parent
 FAKE = TESTS / "fake_intel_gpu_top.py"
+CONFIG_VARIABLES = {"LISTEN_PORT", "REFRESH_PERIOD_MS", "DEVICE", "DEBUG"}
 LAUNCHER = """
 {prelude}
 from intel_gpu_exporter.__main__ import main
@@ -114,22 +122,25 @@ def fake_gpu(tmp_path):
 
 
 @pytest.fixture
-def start_exporter(fake_gpu, tmp_path):
+def exporter_env(fake_gpu, tmp_path):
+    inherited = {k: v for k, v in os.environ.items() if k not in CONFIG_VARIABLES}
+    return {**inherited, "PATH": str(fake_gpu.bin), "FAKE_GPU_DIR": str(tmp_path)}
+
+
+@pytest.fixture
+def start_exporter(exporter_env, tmp_path):
     processes = []
 
-    def start(timing=None, prelude="", **env):
+    def start(timing=None, prelude="", module=False, **env):
         log_path = tmp_path / "exporter.log"
         timing = {**FAST_TIMING, **(timing or {})}
+        launcher = LAUNCHER.format(prelude=prelude, timing=timing)
+        args = ["-m", "intel_gpu_exporter"] if module else ["-c", launcher]
         with log_path.open("wb") as log:
             process = subprocess.Popen(
-                [sys.executable, "-c", LAUNCHER.format(prelude=prelude, timing=timing)],
+                [sys.executable, *args],
                 cwd=REPO,
-                env={
-                    **os.environ,
-                    "PATH": str(fake_gpu.bin),
-                    "FAKE_GPU_DIR": str(tmp_path),
-                    **env,
-                },
+                env={**exporter_env, **env},
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=log,

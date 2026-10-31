@@ -1,10 +1,20 @@
 import os
 import re
 import signal
+import socket
+import subprocess
+import sys
 import time
 
 import pytest
-from helpers import FAST_TIMING, pid_is_gone, wait_until
+from helpers import (
+    FAST_TIMING,
+    FIXTURES,
+    REPO,
+    WAIT_LIMIT,
+    pid_is_gone,
+    wait_until,
+)
 
 UP = "igpu_up"
 RESTARTS = "igpu_collector_restarts_total"
@@ -32,6 +42,19 @@ import subprocess, threading
 
 subprocess.Popen.wait = lambda self, timeout=None: threading.Event().wait()
 """
+WATCHDOG_CRASHES = """
+from intel_gpu_exporter.supervisor import Supervisor
+
+def crash(self):
+    raise RuntimeError("supervisor bug")
+
+Supervisor.run = crash
+"""
+WATCHDOG_RETURNS = """
+from intel_gpu_exporter.supervisor import Supervisor
+
+Supervisor.run = lambda self: None
+"""
 
 
 def test_normal_stream_reaches_metrics(fake_gpu, start_exporter):
@@ -45,27 +68,64 @@ def test_normal_stream_reaches_metrics(fake_gpu, start_exporter):
     assert LAST_SAMPLE in metrics
 
 
-def test_command_line_defaults(fake_gpu, start_exporter):
+def test_capture_reaches_metrics_through_the_pipe(fake_gpu, start_exporter):
+    capture = (FIXTURES / "loaded.json").read_text()
+    fake_gpu.play([["raw", capture], ["hang"]])
+
+    exporter = start_exporter({"timeout": 30})
+    metrics = exporter.wait_for_metrics(igpu_up=1, igpu_clients_count=0)
+
+    assert metrics[WARNINGS] == 0
+
+
+def test_listen_port_from_the_environment(fake_gpu, start_exporter):
+    fake_gpu.play(STREAM)
+    with socket.create_server(("127.0.0.1", 0)) as probe:
+        port = probe.getsockname()[1]
+
+    exporter = start_exporter(module=True, LISTEN_PORT=str(port))
+
+    assert exporter.port == port
+    exporter.wait_for_metrics(igpu_up=1)
+
+
+def test_port_argument_wins_over_the_environment(fake_gpu, start_exporter):
+    fake_gpu.play(STREAM)
+    with socket.create_server(("127.0.0.1", 0)) as probe:
+        port = probe.getsockname()[1]
+
+    assert start_exporter(LISTEN_PORT=str(port)).port != port
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("LISTEN_PORT", "abc"),
+        ("LISTEN_PORT", "70000"),
+        ("REFRESH_PERIOD_MS", "often"),
+        ("REFRESH_PERIOD_MS", "0"),
+    ],
+)
+def test_invalid_number_stops_before_anything_starts(
+    fake_gpu, exporter_env, variable, value
+):
     fake_gpu.play(STREAM)
 
-    start_exporter()
+    result = subprocess.run(
+        [sys.executable, "-m", "intel_gpu_exporter"],
+        cwd=REPO,
+        env={**exporter_env, variable: value},
+        capture_output=True,
+        text=True,
+        timeout=WAIT_LIMIT,
+        check=False,
+    )
 
-    assert fake_gpu.wait_for_spawns(1)[0]["argv"] == ["-J", "-p", "-s", "10000"]
-
-
-def test_command_line_from_the_environment(fake_gpu, start_exporter):
-    fake_gpu.play(STREAM)
-
-    start_exporter(REFRESH_PERIOD_MS="250", DEVICE="pci:vendor=8086,card=0 x")
-
-    assert fake_gpu.wait_for_spawns(1)[0]["argv"] == [
-        "-J",
-        "-p",
-        "-s",
-        "250",
-        "-d",
-        "pci:vendor=8086,card=0 x",
-    ]
+    assert result.returncode != 0
+    [line] = result.stderr.splitlines()
+    assert variable in line
+    assert value in line
+    assert fake_gpu.spawns == []
 
 
 def test_sample_is_exported_without_waiting_for_the_next_one(fake_gpu, start_exporter):
@@ -276,6 +336,17 @@ def test_child_stuck_in_the_kernel_does_not_block_exit(fake_gpu, start_exporter)
     exporter.wait_for_metrics(igpu_up=1)
 
     assert exporter.wait_for_exit(signal.SIGTERM) == 0
+
+
+@pytest.mark.parametrize(
+    "prelude", [WATCHDOG_CRASHES, WATCHDOG_RETURNS], ids=["crashes", "returns"]
+)
+def test_watchdog_ending_on_its_own_exits_non_zero(start_exporter, prelude):
+    exporter = start_exporter(prelude=prelude)
+
+    assert exporter.wait_for_exit() != 0
+
+    assert "Watchdog ended" in exporter.log()
 
 
 def test_signal_gives_the_child_sigterm_first(fake_gpu, start_exporter, tmp_path):

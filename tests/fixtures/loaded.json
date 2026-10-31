@@ -1,0 +1,1187 @@
+[
+
+{
+	"period": {
+		"duration": 59.521598,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 520.819350,
+		"actual": 470.417478,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 1075.239949,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.667554,
+		"Package": 108.989743,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 35.351526,
+			"sema": 8.400969,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 19.051439,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "96899072",
+					"shared": "0",
+					"resident": "87580672",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "120.295592",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "61.334159",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2031.189850,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 122.095923,
+		"actual": 121.111279,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 433.735921,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.128309,
+		"Package": 31.263816,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 10.140673,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.193350,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "7.981845",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.239924",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2030.928440,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 104.385756,
+		"actual": 106.355298,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 413.603938,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.098483,
+		"Package": 34.720851,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.975709,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.248165,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.733141",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.674701",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.215413,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 102.603798,
+		"actual": 103.590373,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 406.962178,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.097640,
+		"Package": 27.198133,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.485892,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 6.981412,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.177402",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.441431",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2028.206953,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 106.004962,
+		"actual": 106.991054,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 411.693688,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.100180,
+		"Package": 26.170607,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.628750,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 6.855483,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "32768"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.304723",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.305685",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.397418,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 104.074316,
+		"actual": 106.047289,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 408.405374,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.098173,
+		"Package": 24.678116,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.832992,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.216936,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.328897",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.495006",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.341645,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 104.570436,
+		"actual": 106.050206,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 415.815461,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.097092,
+		"Package": 43.350539,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.713921,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 6.942587,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.433222",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.429074",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.240495,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 102.109247,
+		"actual": 103.095810,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 403.997455,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.098150,
+		"Package": 27.960149,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.751575,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.139818,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.427077",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.635350",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.494187,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 103.082910,
+		"actual": 104.069349,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 403.946904,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.098409,
+		"Package": 23.844841,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.855068,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.178460,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.676548",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.613082",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2027.546264,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 103.080262,
+		"actual": 104.559883,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 415.280290,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.097112,
+		"Package": 31.754535,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 9.448653,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 7.000342,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+		"4292774542": {
+			"name": "ffmpeg",
+			"pid": "1234",
+			"memory": {
+				"system": {
+					"total": "97685504",
+					"shared": "0",
+					"resident": "88547328",
+					"purgeable": "237568",
+					"active": "0"
+				}
+			},
+			"engine-classes": {
+				"Render/3D": {
+					"busy": "8.067484",
+					"unit": "%"
+				},
+				"Blitter": {
+					"busy": "0.000000",
+					"unit": "%"
+				},
+				"Video": {
+					"busy": "6.421711",
+					"unit": "%"
+				},
+				"VideoEnhance": {
+					"busy": "0.000000",
+					"unit": "%"
+				}
+			}
+		}
+	}
+},
+{
+	"period": {
+		"duration": 2035.075975,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 62.896915,
+		"actual": 63.388297,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 251.587659,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.064752,
+		"Package": 23.327576,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 6.183987,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 4.536614,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}
+{
+	"period": {
+		"duration": 2026.845657,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 26.338148,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}
+{
+	"period": {
+		"duration": 2027.000707,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 33.046927,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}
+{
+	"period": {
+		"duration": 2030.942170,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 22.336077,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}
+{
+	"period": {
+		"duration": 2026.609606,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 28.988098,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}

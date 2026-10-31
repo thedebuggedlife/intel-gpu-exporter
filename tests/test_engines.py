@@ -77,6 +77,17 @@ def test_second_video_engine_from_capture():
         assert metrics[WARNINGS] == 0
 
 
+def test_encode_runs_on_the_second_video_engine():
+    collector = SampleCollector()
+    for sample in load_samples(FIXTURES / "loaded.json")[:10]:
+        collector.update(sample)
+
+        metrics = scrape(collector)
+
+        assert metrics["igpu_engines_video_1_busy"] > 0
+        assert metrics["igpu_engines_video_0_busy"] == 0
+
+
 def test_unknown_class_is_exported_and_warned(caplog):
     metrics = scrape(collect_engines({"[unknown]/0": entry()}))
 

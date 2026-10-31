@@ -79,6 +79,9 @@ has_line "$(cat "$listing")" "usr/bin/intel_gpu_top" || fail "the listing has no
 if grep --extended-regexp '(^|/)\.git(/|$)' "$listing"; then
     fail ".git is in the image"
 fi
+if grep --extended-regexp '(^|/)tests(/|$)' "$listing"; then
+    fail "tests are in the image"
+fi
 if grep '^app/' "$listing" | grep --invert-match --extended-regexp '^app/(intel_gpu_exporter/.*)?$'; then
     fail "/app holds more than the exporter package"
 fi
@@ -95,7 +98,7 @@ wait_for "no GPU: the container reports unhealthy" "$no_gpu" health_is "$no_gpu"
 is_running "$no_gpu" || fail "no GPU: the process stopped" "$no_gpu"
 pass "no GPU: the process keeps running"
 
-docker stop --time 20 "$no_gpu" >/dev/null
+docker stop -t 20 "$no_gpu" >/dev/null
 [ "$(docker inspect --format '{{.State.ExitCode}}' "$no_gpu")" = "0" ] ||
     fail "SIGTERM through catatonit did not exit cleanly" "$no_gpu"
 pass "SIGTERM through catatonit exits 0"

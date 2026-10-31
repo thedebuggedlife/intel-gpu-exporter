@@ -69,7 +69,8 @@ def test_a_proxy_in_the_environment_is_not_used(fake_gpu, start_exporter, export
     fake_gpu.play(STREAM)
     exporter = start_exporter()
     exporter.wait_for_metrics(igpu_up=1)
-    env = {**exporter_env, "http_proxy": UNREACHABLE_PROXY}
+    direct = {k: v for k, v in exporter_env.items() if k.lower() != "no_proxy"}
+    env = {**direct, "http_proxy": UNREACHABLE_PROXY}
 
     assert probe(env, exporter.port).returncode == 0
 

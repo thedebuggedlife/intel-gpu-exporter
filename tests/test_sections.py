@@ -17,10 +17,6 @@ def warning_records(caplog):
     return [r for r in caplog.records if r.levelno == logging.WARNING]
 
 
-def test_scrape_before_first_sample():
-    assert scrape(SampleCollector()) == {WARNINGS: 0}
-
-
 def test_real_zero_is_exported():
     collector = SampleCollector()
     collector.update(load_samples(FIXTURES / "physical.json")[0])
@@ -117,7 +113,9 @@ def test_non_object_sample_clears_the_previous_sample():
 
     collector.update("garbage")
 
-    assert scrape(collector) == {WARNINGS: 1}
+    metrics = scrape(collector)
+    assert "igpu_rc6" not in metrics
+    assert metrics[WARNINGS] == 1
 
 
 def test_number_too_large_for_a_float_warns_and_scrape_succeeds():

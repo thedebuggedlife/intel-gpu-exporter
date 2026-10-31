@@ -1,26 +1,27 @@
-import json
+import os
+import time
 from pathlib import Path
 
 from prometheus_client import CollectorRegistry, generate_latest
 from prometheus_client.parser import text_string_to_metric_families
 
+from intel_gpu_exporter.stream import StreamDecoder
+
 TESTS = Path(__file__).resolve().parent
 FIXTURES = TESTS / "fixtures"
 DATA_JSON = TESTS / "data.json"
+WAIT_LIMIT = 10
+FAST_TIMING = {
+    "timeout": 0.5,
+    "backoff_initial": 0.02,
+    "backoff_cap": 0.16,
+    "stop_grace": 0.3,
+    "poll": 0.01,
+}
 
 
 def load_samples(path):
-    text = path.read_text()
-    decoder = json.JSONDecoder()
-    samples = []
-    position = 0
-    while True:
-        while position < len(text) and text[position] in " \t\r\n,[]":
-            position += 1
-        if position == len(text):
-            return samples
-        sample, position = decoder.raw_decode(text, position)
-        samples.append(sample)
+    return StreamDecoder(lambda key, message: None).feed(path.read_bytes())
 
 
 def exposition(collector):
@@ -36,3 +37,21 @@ def scrape(collector):
         for sample in family.samples
         if sample.name.startswith("igpu_")
     }
+
+
+def wait_until(condition, limit=WAIT_LIMIT):
+    deadline = time.monotonic() + limit
+    while True:
+        result = condition()
+        if result:
+            return result
+        assert time.monotonic() < deadline, "Condition not reached in time"
+        time.sleep(0.005)
+
+
+def pid_is_gone(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False

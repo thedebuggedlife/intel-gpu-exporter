@@ -8,6 +8,7 @@ from prometheus_client.parser import text_string_to_metric_families
 from intel_gpu_exporter.stream import StreamDecoder
 
 TESTS = Path(__file__).resolve().parent
+REPO = TESTS.parent
 FIXTURES = TESTS / "fixtures"
 DATA_JSON = TESTS / "data.json"
 WAIT_LIMIT = 10

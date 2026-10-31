@@ -56,6 +56,7 @@ def test_default_port(monkeypatch):
     def bind(port):
         raise Bound(port)
 
+    monkeypatch.delenv("LISTEN_PORT", raising=False)
     monkeypatch.setattr(entry_point, "start_http_server", bind)
     monkeypatch.setattr(entry_point, "REGISTRY", CollectorRegistry())
 
@@ -72,3 +73,44 @@ def test_metrics_path(fake_gpu, start_exporter):
 
     assert status == 200
     assert "igpu_up 0.0" in body
+
+
+def test_default_refresh_period(fake_gpu, start_exporter):
+    fake_gpu.play([["hang"]])
+
+    start_exporter()
+
+    assert fake_gpu.wait_for_spawns(1)[0]["argv"] == ["-J", "-p", "-s", "10000"]
+
+
+def test_refresh_period_and_device_filter(fake_gpu, start_exporter):
+    fake_gpu.play([["hang"]])
+
+    start_exporter(REFRESH_PERIOD_MS="250", DEVICE="pci:vendor=8086,card=0 x")
+
+    assert fake_gpu.wait_for_spawns(1)[0]["argv"] == [
+        "-J",
+        "-p",
+        "-s",
+        "250",
+        "-d",
+        "pci:vendor=8086,card=0 x",
+    ]
+
+
+def sample_is_logged(fake_gpu, start_exporter, **env):
+    fake_gpu.play([["samples", 1], ["hang"]])
+
+    exporter = start_exporter({"timeout": 30}, **env)
+    exporter.wait_for_metrics(igpu_up=1)
+
+    return "'period'" in exporter.log()
+
+
+def test_debug_enables_debug_logging(fake_gpu, start_exporter):
+    assert sample_is_logged(fake_gpu, start_exporter, DEBUG="1")
+
+
+@pytest.mark.parametrize("value", ["false", "0", "no", ""])
+def test_debug_off_values(fake_gpu, start_exporter, value):
+    assert not sample_is_logged(fake_gpu, start_exporter, DEBUG=value)

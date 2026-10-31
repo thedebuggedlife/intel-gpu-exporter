@@ -1,10 +1,11 @@
 import logging
-import os
 import signal
+import sys
 import threading
 
 from prometheus_client import REGISTRY, start_http_server
 
+from intel_gpu_exporter.config import ConfigError, load_config
 from intel_gpu_exporter.metrics import SampleCollector
 from intel_gpu_exporter.supervisor import (
     Supervisor,
@@ -16,16 +17,20 @@ from intel_gpu_exporter.supervisor import (
 log = logging.getLogger(__name__)
 
 
-def main(port=8080, timing=None):
-    debug = logging.DEBUG if os.getenv("DEBUG") else logging.INFO
-    logging.basicConfig(format="%(asctime)s - %(message)s", level=debug)
+def main(port=None, timing=None):
+    try:
+        config = load_config()
+    except ConfigError as error:
+        sys.exit(str(error))
 
-    period = int(os.getenv("REFRESH_PERIOD_MS", "10000"))
-    timing = timing or Timing(timeout=stall_timeout(period))
+    level = logging.DEBUG if config.debug else logging.INFO
+    logging.basicConfig(format="%(asctime)s - %(message)s", level=level)
+
+    timing = timing or Timing(timeout=stall_timeout(config.refresh_period_ms))
 
     collector = SampleCollector(timing.timeout)
     REGISTRY.register(collector)
-    server, _ = start_http_server(port)
+    server, _ = start_http_server(config.listen_port if port is None else port)
     log.info("Listening on port %d", server.server_port)
 
     requested = False
@@ -39,7 +44,7 @@ def main(port=8080, timing=None):
 
     stop = threading.Event()
     supervisor = Supervisor(
-        build_command(period, os.getenv("DEVICE")), collector, stop, timing
+        build_command(config.refresh_period_ms, config.device), collector, stop, timing
     )
     watchdog = threading.Thread(target=supervisor.run, name="watchdog", daemon=True)
     watchdog.start()
@@ -50,6 +55,10 @@ def main(port=8080, timing=None):
     stop.set()
     # Bounded, so a child stuck in the kernel can't hold up exit
     watchdog.join(2 * timing.stop_grace)
+
+    if not requested:
+        log.error("Watchdog ended with no stop requested")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

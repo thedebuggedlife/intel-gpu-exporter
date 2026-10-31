@@ -111,6 +111,27 @@ def test_wrong_shapes_do_not_raise(sample):
     assert "igpu_frequency_actual" not in metrics
 
 
+def test_non_object_sample_clears_the_previous_sample():
+    collector = SampleCollector()
+    collector.update(full_sample())
+
+    collector.update("garbage")
+
+    assert scrape(collector) == {WARNINGS: 1}
+
+
+def test_number_too_large_for_a_float_warns_and_scrape_succeeds():
+    sample = full_sample()
+    sample["rc6"]["value"] = 10**400
+    collector = SampleCollector()
+
+    collector.update(sample)
+
+    metrics = scrape(collector)
+    assert "igpu_rc6" not in metrics
+    assert metrics[WARNINGS] == 1
+
+
 def test_repeated_problem_counts_once(caplog):
     sample = full_sample()
     del sample["rc6"]

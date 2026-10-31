@@ -46,7 +46,7 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 - Docker path: strips each line and retries `json.loads` on the accumulated buffer until it parses.
 - Native path: buffers lines until one is exactly `},\n`, then parses the buffer without that trailing comma. This relies on `intel_gpu_top`'s indentation, since nested closing braces are tab-indented and don't match.
 
-Both expect the shape in `tests/data.json`: objects separated by `},` with no enclosing array. The `intel_gpu_top` 2.3 output in `tests/fixtures/` has a leading `[` and no commas, which breaks both: the Docker path never parses anything, so no sample metrics appear, and the native path raises `JSONDecodeError`. Neither passes `-p` yet, so a parsed 2.x sample would have no instance suffixes, which warn and export no engine series. The image's `intel_gpu_top` 2.0 binary contains a `[\n` string, so check this first if sample metrics are missing.
+Both expect the shape in `tests/data.json`: objects separated by `},` with no enclosing array. The `intel_gpu_top` 2.3 output in `tests/fixtures/` has a leading `[` and no commas, which breaks both: neither path ever parses a sample, so no sample metrics appear. Neither passes `-p` yet, so a parsed 2.x sample would have no instance suffixes, which warn and export no engine series. The image's `intel_gpu_top` 2.0 binary contains a `[\n` string, so check this first if sample metrics are missing.
 
 ## Configuration
 

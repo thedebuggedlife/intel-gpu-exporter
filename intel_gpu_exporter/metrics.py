@@ -42,7 +42,8 @@ class SampleCollector:
 
     def update(self, sample):
         if not isinstance(sample, dict):
-            self._warn("sample", f"Ignoring a sample that isn't an object: {sample!r}")
+            self._warn("sample", f"Sample isn't an object: {sample!r}")
+            self._snapshot = {}
             return
 
         snapshot = {}
@@ -96,16 +97,16 @@ class SampleCollector:
                 self._warn(key, f"Engine key {key!r} has no usable class name")
                 continue
 
-            values = engines[key]
-            if not isinstance(values, dict):
-                self._warn(f"engines.{key}", f"Engine {key!r} isn't an object")
-                continue
-
             prefix = f"igpu_engines_{engine_class}_{instance}"
             if prefix in prefixes:
                 self._warn(key, f"Engine key {key!r} collides with another key")
                 continue
             prefixes.add(prefix)
+
+            values = engines[key]
+            if not isinstance(values, dict):
+                self._warn(f"engines.{key}", f"Engine {key!r} isn't an object")
+                continue
 
             if raw_class not in KNOWN_CLASSES:
                 self._warn(key, f"Unknown engine class in {key!r}; exporting {prefix}")
@@ -135,7 +136,10 @@ class SampleCollector:
     def _number(self, values, field, key):
         value = values.get(field)
         if isinstance(value, int | float) and not isinstance(value, bool):
-            return value
+            try:
+                return float(value)
+            except OverflowError:
+                pass
         self._warn(key, f"Expected a number for {key!r}, got {value!r}")
         return None
 

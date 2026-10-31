@@ -135,6 +135,12 @@ def test_known_class_wins_collision_regardless_of_order():
     assert scrape(collector)["igpu_engines_video_enhance_0_busy"] == 1.5
 
 
+def test_broken_known_entry_still_holds_its_name_against_unknown_class():
+    collector = collect_engines({"Video/0": 5, "Video-/0": entry(9.0)})
+
+    assert engine_metrics(collector) == {}
+
+
 def test_missing_engine_field_warns(caplog):
     engine = entry()
     del engine["sema"]

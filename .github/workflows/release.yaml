@@ -80,8 +80,7 @@ jobs:
           if scripts/release.py check "${title##* }" --manifest .release-please-manifest.json; then
             gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --auto --squash
           else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$number/requested_reviewers" \
-              --field 'reviewers[]=avargaskun' >/dev/null
+            scripts/hold-for-review.sh "$number"
           fi
 
   publish:

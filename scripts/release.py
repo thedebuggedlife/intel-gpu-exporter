@@ -70,7 +70,8 @@ def check(version_text: str, manifest_version: str | None = None) -> None:
     if manifest_version is None:
         return
     current = parse_version(manifest_version)
-    if current != Version(0, 0, 0) and version.major > current.major:
+    allowed = 1 if current == Version(0, 0, 0) else current.major
+    if version.major > allowed:
         raise ReleaseError(
             f"{version} raises the major version from {current}, which needs a person"
         )

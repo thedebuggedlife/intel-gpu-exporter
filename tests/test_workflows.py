@@ -272,10 +272,35 @@ def test_auto_merge_sets_a_fixed_body():
     assert step["env"]["PR_TITLE"] == "${{ github.event.pull_request.title }}"
 
 
-def test_auto_merge_holds_for_review_with_a_request():
+def test_auto_merge_holds_a_pr_through_the_script():
     run = auto_merge_step("gh pr merge")["run"]
-    assert "requested_reviewers" in run
-    assert "reviewers[]=avargaskun" in run
+    assert 'scripts/hold-for-review.sh "$PR_NUMBER"' in run
+
+
+def test_release_holds_a_pr_through_the_script():
+    steps = load("release.yaml")["jobs"]["auto-merge"]["steps"]
+    run = next(s for s in steps if "gh pr merge" in s.get("run", ""))["run"]
+    assert 'scripts/hold-for-review.sh "$number"' in run
+
+
+@pytest.mark.parametrize("path", workflow_paths(), ids=lambda p: p.name)
+def test_no_workflow_requests_review_without_disarming(path):
+    assert "requested_reviewers" not in path.read_text()
+
+
+def test_auto_merge_token_can_merge_action_updates():
+    step = next(
+        s
+        for s in auto_merge_job()["steps"]
+        if "create-github-app-token" in s.get("uses", "")
+    )
+    permissions = {k: v for k, v in step["with"].items() if k.startswith("permission-")}
+    assert permissions == {
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+        "permission-vulnerability-alerts": "read",
+        "permission-workflows": "write",
+    }
 
 
 def test_fetch_metadata_looks_up_alerts():

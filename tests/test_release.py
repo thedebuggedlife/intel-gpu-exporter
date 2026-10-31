@@ -124,6 +124,17 @@ def test_auto_merge_allows_the_first_release():
     check("1.0.0", manifest_version="0.0.0")
 
 
+@pytest.mark.parametrize("version", ["2.0.0", "2.0.0-rc.1", "9.0.0"])
+def test_first_release_refuses_a_major_above_1(version):
+    with pytest.raises(ReleaseError, match="major"):
+        check(version, manifest_version="0.0.0")
+
+
+def test_auto_merge_refuses_a_first_major_from_a_real_0_x():
+    with pytest.raises(ReleaseError, match="major"):
+        check("1.0.0", manifest_version="0.4.0")
+
+
 def test_auto_merge_allows_a_minor_bump():
     check("1.5.0", manifest_version="1.4.2")
 

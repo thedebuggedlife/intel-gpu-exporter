@@ -1,9 +1,9 @@
 {
   "worktree": {
-    "setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "setup": "uv venv --clear --seed --python 3.13 .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/pip install -r requirements-dev.txt",
     "teardown": "scripts/lumen-prune.sh \"$PASEO_WORKTREE_PATH\" || true"
   },
   "scripts": {
-    "test": { "command": ".venv/bin/python tests/replay_sample.py" }
+    "test": { "command": ".venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pytest" }
   }
 }

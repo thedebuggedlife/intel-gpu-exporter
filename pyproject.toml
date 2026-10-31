@@ -1,0 +1,9 @@
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint.per-file-ignores]
+# Legacy script kept byte-identical until it is replaced
+"intel-gpu-exporter.py" = ["F401", "I001", "LOG015", "PLW1508", "UP032"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

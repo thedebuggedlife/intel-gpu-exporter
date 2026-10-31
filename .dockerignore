@@ -1,6 +1,8 @@
 .claude
 .github
 .gitignore
+.pytest_cache
+.ruff_cache
 .venv
 __pycache__
 docs
@@ -10,3 +12,5 @@ CLAUDE.md
 Dockerfile
 README.md
 paseo.json
+pyproject.toml
+requirements-dev.txt

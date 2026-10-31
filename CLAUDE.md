@@ -10,19 +10,26 @@ A Prometheus exporter for Intel GPUs. All the code is in `intel-gpu-exporter.py`
 
 ## Commands
 
-There is no test framework, linter, or PR CI. `tests/data.json` is a captured sample and `tests/replay_sample.py` replays its first entry; nothing runs either automatically, and `.dockerignore` excludes `tests/` from the image.
+`.github/workflows/ci.yaml` runs `ruff` and `pytest` on Python 3.13, matching the `Dockerfile`, on every PR and on pushes to `main`. Its check is named `lint-and-test`. Every job declares explicit `permissions:` because default tokens are read-only, and every Action is pinned by full commit SHA with the version in a comment.
 
-`intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the sample-replay check below is the only way to exercise the code. It covers `update()` but not the stream parsing in `__main__`.
+Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: hash-locking the runtime file would make pip reject the unhashed dev pins.
+
+`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/data.json` is a captured sample and `tests/test_replay_sample.py` replays its first entry; `.dockerignore` excludes `tests/` from the image.
+
+`intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the sample-replay test is the only way to exercise the code. It covers `update()` but not the stream parsing in `__main__`.
 
 ```bash
-# Paseo runs these two when it creates a worktree
-python3 -m venv .venv
+# Paseo runs these three when it creates a worktree. uv is required: it provides CI's Python, as pytest needs a newer one than some systems ship
+uv venv --clear --seed --python 3.13 .venv
 .venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt
 
-# Replay the first captured sample through update() and print the resulting metrics
-.venv/bin/python tests/replay_sample.py
+# The same checks CI runs
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/pytest
 
-# Build the image (CI only publishes linux/amd64)
+# Build the image (linux/amd64 is the only target)
 docker build --platform linux/amd64 -t intel-gpu-exporter .
 
 # Run on a host with an Intel GPU; privileged and host PID are required
@@ -54,14 +61,14 @@ Set through environment variables, none of which are documented in the README:
 
 ## Release
 
-Publishing is paused: `.github/workflows/rolling.yaml` only runs on manual dispatch, so pushes publish nothing. Don't dispatch it or restore its push triggers unless asked. A dispatch publishes to `ghcr.io/<repo>`: `main` to `:rolling` and `dev` to `:rolling-dev`. There are no versioned tags. Renovate manages the `prometheus_client` pin, the Python base image, and the GitHub Actions versions.
+Nothing publishes images: no workflow pushes to `ghcr.io`, and there are no versioned tags. Nothing updates dependencies automatically either, so the `prometheus_client` pin, the dev tool pins, the Python base image and the Action SHAs only change by hand.
 
 ## Agent workflow (superpowers + Paseo)
 
 These are declared preferences; they override the superpowers skills' defaults.
 
-- **Worktrees are owned by Paseo** (`paseo.json` creates `.venv` from `requirements.txt` on creation; they live under `~/.paseo/worktrees/`). If already in a linked worktree, work there. Never use `EnterWorktree` or `git worktree add`. From the main checkout, create a Paseo worktree (`paseo worktree create --mode branch-off --new-branch <name>`, or `mcp__paseo__create_workspace`) — the main checkout may be shared with other agents. Don't bump the `requirements.txt` pin in a worktree, since Renovate owns it; if dependencies are missing, run `.venv/bin/pip install -r requirements.txt`.
-- **Baseline / verification** is `.venv/bin/python tests/replay_sample.py`. Run `docker build` only when changing the `Dockerfile`, `.dockerignore` or `requirements.txt`.
+- **Worktrees are owned by Paseo** (`paseo.json` creates `.venv` from `requirements.txt` and `requirements-dev.txt` on creation; they live under `~/.paseo/worktrees/`). If already in a linked worktree, work there. Never use `EnterWorktree` or `git worktree add`. From the main checkout, create a Paseo worktree (`paseo worktree create --mode branch-off --new-branch <name>`, or `mcp__paseo__create_workspace`) — the main checkout may be shared with other agents. Don't bump the `requirements.txt` pin unless that is the task; if dependencies are missing, run `.venv/bin/pip install -r requirements.txt` and `.venv/bin/pip install -r requirements-dev.txt`.
+- **Baseline / verification** is `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pytest`, the same checks as CI and Paseo's `test` script. Run `docker build` only when changing the `Dockerfile`, `.dockerignore` or `requirements.txt`.
 - **Image contents:** the Dockerfile's `COPY . .` takes everything `.dockerignore` doesn't exclude, so add new non-runtime files there.
 - **Finishing a branch:** always push and open a PR against `origin` (`thedebuggedlife`), never `upstream`; never merge into `main` locally. Archive the worktree through Paseo, then delete the merged branch. If a worktree was removed outside Paseo, run `scripts/lumen-prune.sh`.
 - **Specs** go in `docs/specs/YYYY-MM-DD-<feature>.md`, committed as `docs:` on the feature branch.

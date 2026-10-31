@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A Prometheus exporter for Intel GPUs. All the code is in `intel-gpu-exporter.py`: it runs `intel_gpu_top -J` as a subprocess, parses the JSON stream from its stdout, and serves the latest sample as gauges on port 8080 (hardcoded).
+A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` package, run with `python -m intel_gpu_exporter`: it runs `intel_gpu_top -J` as a subprocess, parses the JSON stream from its stdout, and serves the latest sample as gauges on port 8080 (hardcoded). `docs/specs/2026-10-30-exporter.md` is the design for the exporter, including work not done yet.
 
 `origin` is the `thedebuggedlife` fork. `upstream` (`onedr0p`) is marked unmaintained in the README, so don't expect changes to flow from there.
 
@@ -14,9 +14,9 @@ A Prometheus exporter for Intel GPUs. All the code is in `intel-gpu-exporter.py`
 
 Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: hash-locking the runtime file would make pip reject the unhashed dev pins.
 
-`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/data.json` is a captured sample and `tests/test_replay_sample.py` replays its first entry; `.dockerignore` excludes `tests/` from the image.
+`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand, so keep it independent of the code. `.dockerignore` excludes `tests/` from the image.
 
-`intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the sample-replay test is the only way to exercise the code. It covers `update()` but not the stream parsing in `__main__`.
+`intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the tests that replay captures are the only way to exercise the code. They cover `SampleCollector` but not the stream handling in `stream.py`.
 
 ```bash
 # Paseo runs these three when it creates a worktree. uv is required: it provides CI's Python, as pytest needs a newer one than some systems ship
@@ -38,15 +38,15 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 ## Architecture
 
-**Metrics are declared by hand.** Each one is a module-level `Gauge` plus a matching `.set()` in `update()`. Adding or renaming a metric also means updating the README's Metrics section and `examples/simple-grafana-dash.json`, which references every metric by name.
+**Metrics are built from the latest sample, not declared as gauges.** `SampleCollector` in `metrics.py` turns each sample into a new snapshot in `update()`, and `collect()` renders that snapshot on each scrape. Don't add module-level `Gauge`s: an unlabelled one exports 0 from the moment it is registered. Section metrics are listed in `SECTION_METRICS`, and engine metrics are derived from each `Name/N` key, so every instance is exported. Adding or renaming a metric also means updating the README's Metrics section and `examples/simple-grafana-dash.json`, which references every metric by name.
 
-**`update()` reports missing fields as 0**, so a zero can mean either "idle" or "not in the data". Only instance 0 of each engine is exported; the sample's `Video/1` is silently dropped.
+**Missing data is a gap, never a 0.** A value that isn't in the sample produces no series, and a real 0 stays 0. Unknown input logs one warning per distinct key and raises `igpu_parse_warnings_total`, which must stay at 0 on healthy hardware. So `power`, `imc-bandwidth` and `clients`, which some hardware legitimately omits, log at INFO instead. `update()` must not raise on sample content.
 
-**There are two stream parsers, selected by `IS_DOCKER`.** The Dockerfile sets it, so the image always uses the first one:
+**There are two stream parsers in `stream.py`, selected by `IS_DOCKER`.** The Dockerfile sets it, so the image always uses the first one:
 - Docker path: strips each line and retries `json.loads` on the accumulated buffer until it parses.
 - Native path: buffers lines until one is exactly `},\n`, then parses the buffer without that trailing comma. This relies on `intel_gpu_top`'s indentation, since nested closing braces are tab-indented and don't match.
 
-Both expect the shape in `tests/data.json`: objects separated by `},` with no enclosing array. A leading `[` breaks both: the Docker path never parses anything and leaves every metric at 0, and the native path raises `JSONDecodeError`. The image's `intel_gpu_top` 2.0 binary contains a `[\n` string, so check this first if metrics stay at 0. It hasn't been confirmed against real GPU output.
+Both expect the shape in `tests/data.json`: objects separated by `},` with no enclosing array. The `intel_gpu_top` 2.3 output in `tests/fixtures/` has a leading `[` and no commas, which breaks both: neither path ever parses a sample, so no sample metrics appear. Neither passes `-p` yet, so a parsed 2.x sample would have no instance suffixes, which warn and export no engine series. The image's `intel_gpu_top` 2.0 binary contains a `[\n` string, so check this first if sample metrics are missing.
 
 ## Configuration
 

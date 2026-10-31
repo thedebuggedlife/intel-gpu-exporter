@@ -198,3 +198,80 @@ def test_no_workflow_sets_the_switch():
         text = path.read_text()
         assert "variable set" not in text, path.name
         assert "PUBLISH_ENABLED:" not in text, path.name
+
+
+AUTO_MERGE = "dependabot-auto-merge.yaml"
+
+
+def auto_merge_job():
+    jobs = load(AUTO_MERGE)["jobs"]
+    assert list(jobs) == ["auto-merge"]
+    return jobs["auto-merge"]
+
+
+def auto_merge_step(text):
+    return next(s for s in auto_merge_job()["steps"] if text in s.get("run", ""))
+
+
+def test_auto_merge_uses_pull_request_target_only():
+    triggers = load(AUTO_MERGE)[True]
+    assert list(triggers) == ["pull_request_target"]
+    assert triggers["pull_request_target"]["types"] == [
+        "opened",
+        "reopened",
+        "synchronize",
+    ]
+
+
+def test_auto_merge_is_limited_to_dependabot():
+    condition = auto_merge_job()["if"]
+    assert "github.event.pull_request.user.login == 'dependabot[bot]'" in condition
+    assert (
+        "github.event.pull_request.head.repo.full_name == github.repository"
+        in condition
+    )
+    assert "||" not in condition
+
+
+def test_auto_merge_never_checks_out_the_pr():
+    checkouts = [
+        s for s in auto_merge_job()["steps"] if "actions/checkout" in s.get("uses", "")
+    ]
+    assert len(checkouts) == 1
+    assert "ref" not in checkouts[0]["with"]
+    assert "github.event.pull_request.head" not in str(checkouts)
+
+
+def test_auto_merge_interpolates_nothing_from_the_pr_into_a_script():
+    for step in auto_merge_job()["steps"]:
+        assert "${{" not in step.get("run", ""), step["name"]
+
+
+def test_auto_merge_sets_a_fixed_body():
+    step = auto_merge_step("gh pr merge")
+    assert '--body "Automated dependency update."' in step["run"]
+    assert '--subject "$PR_TITLE"' in step["run"]
+    assert step["env"]["PR_TITLE"] == "${{ github.event.pull_request.title }}"
+
+
+def test_auto_merge_holds_for_review_with_a_request():
+    run = auto_merge_step("gh pr merge")["run"]
+    assert "requested_reviewers" in run
+    assert "reviewers[]=avargaskun" in run
+
+
+def test_fetch_metadata_looks_up_alerts():
+    step = next(
+        s
+        for s in auto_merge_job()["steps"]
+        if "dependabot/fetch-metadata" in s.get("uses", "")
+    )
+    assert step["with"]["alert-lookup"] is True
+    assert step["with"]["github-token"] == "${{ steps.token.outputs.token }}"
+    assert "skip-verification" not in step["with"]
+    assert "skip-commit-verification" not in step["with"]
+
+
+def test_auto_merge_checks_its_credentials_first():
+    names = [s["name"] for s in auto_merge_job()["steps"]]
+    assert names.index("Check the app credentials") < names.index("Create app token")

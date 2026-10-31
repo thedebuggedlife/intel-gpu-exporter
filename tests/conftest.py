@@ -154,6 +154,6 @@ def start_exporter(exporter_env, tmp_path):
     for process in processes:
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError, PermissionError:
             pass
         process.wait()

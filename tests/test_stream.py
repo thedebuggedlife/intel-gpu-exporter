@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 from helpers import DATA_JSON, FIXTURES
@@ -45,6 +46,58 @@ def test_capture_gives_the_same_samples_whatever_the_chunk_size():
     ]
 
     assert samples == decode(stream)
+
+
+def loaded_capture():
+    return (FIXTURES / "loaded.json").read_bytes()
+
+
+def test_decodes_a_capture_with_mixed_framing():
+    stream = loaded_capture()
+
+    assert b"},\n{" in stream
+    assert b"}\n{" in stream
+    assert stream.endswith(b"}")
+    assert len(decode(stream)) == 15
+
+
+def test_mixed_framing_capture_bytewise():
+    stream = loaded_capture()
+    bytewise = decoder()
+
+    samples = [
+        value for i in range(len(stream)) for value in bytewise.feed(stream[i : i + 1])
+    ]
+
+    assert samples == decode(stream)
+
+
+@pytest.mark.parametrize(
+    ("marker", "offset"),
+    [
+        pytest.param(b"},\n{", 1, id="after-a-closing-brace-before-its-comma"),
+        pytest.param(b"},\n{", 2, id="after-a-comma"),
+        pytest.param(b"}\n{", 1, id="after-a-closing-brace-with-no-comma"),
+        pytest.param(b"}\n{", 2, id="between-samples-with-no-comma"),
+        pytest.param(b'"engine-classes"', 7, id="inside-a-key"),
+        pytest.param(b'"4292774542"', 5, id="inside-a-client-id"),
+        pytest.param(b'"ffmpeg"', 3, id="inside-a-client-name"),
+        pytest.param(b"59.521598", 3, id="inside-a-number"),
+    ],
+)
+def test_mixed_framing_capture_split_at_every_awkward_point(marker, offset):
+    stream = loaded_capture()
+    expected = decode(stream)
+    points = [m.start() + offset for m in re.finditer(re.escape(marker), stream)]
+    assert points
+    pieces = [
+        stream[start:end]
+        for start, end in zip([0, *points], [*points, len(stream)], strict=True)
+    ]
+
+    split = decoder()
+
+    assert [value for piece in pieces for value in split.feed(piece)] == expected
 
 
 def test_sample_is_returned_at_its_closing_brace():

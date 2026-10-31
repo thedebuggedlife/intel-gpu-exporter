@@ -41,6 +41,15 @@ def scrape(collector):
     }
 
 
+def labelled(collector, name):
+    return {
+        tuple(sample.labels.values()): sample.value
+        for family in text_string_to_metric_families(exposition(collector))
+        for sample in family.samples
+        if sample.name == name
+    }
+
+
 def wait_until(condition, limit=WAIT_LIMIT):
     deadline = time.monotonic() + limit
     while True:

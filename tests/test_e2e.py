@@ -7,7 +7,14 @@ import sys
 import time
 
 import pytest
-from helpers import FAST_TIMING, REPO, WAIT_LIMIT, pid_is_gone, wait_until
+from helpers import (
+    FAST_TIMING,
+    FIXTURES,
+    REPO,
+    WAIT_LIMIT,
+    pid_is_gone,
+    wait_until,
+)
 
 UP = "igpu_up"
 RESTARTS = "igpu_collector_restarts_total"
@@ -59,6 +66,16 @@ def test_normal_stream_reaches_metrics(fake_gpu, start_exporter):
     assert metrics[RESTARTS] == 0
     assert metrics[WARNINGS] == 0
     assert LAST_SAMPLE in metrics
+
+
+def test_capture_reaches_metrics_through_the_pipe(fake_gpu, start_exporter):
+    capture = (FIXTURES / "loaded.json").read_text()
+    fake_gpu.play([["raw", capture], ["hang"]])
+
+    exporter = start_exporter({"timeout": 30})
+    metrics = exporter.wait_for_metrics(igpu_up=1, igpu_clients_count=0)
+
+    assert metrics[WARNINGS] == 0
 
 
 def test_listen_port_from_the_environment(fake_gpu, start_exporter):

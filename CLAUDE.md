@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` package, run with `python -m intel_gpu_exporter`: it runs `intel_gpu_top -J` as a subprocess, parses the JSON stream from its stdout, and serves the latest sample as gauges on port 8080 (hardcoded). `docs/specs/2026-10-30-exporter.md` is the design for the exporter, including work not done yet.
+A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` package, run with `python -m intel_gpu_exporter`: it runs `intel_gpu_top -J -p` as a supervised subprocess, parses the JSON stream from its stdout, and serves the latest sample as gauges on port 8080 (hardcoded). `docs/specs/2026-10-30-exporter.md` is the design for the exporter, including work not done yet.
 
 `origin` is the `thedebuggedlife` fork. `upstream` (`onedr0p`) is marked unmaintained in the README, so don't expect changes to flow from there.
 
@@ -16,7 +16,7 @@ Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirem
 
 `pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand, so keep it independent of the code. `.dockerignore` excludes `tests/` from the image.
 
-`intel_gpu_top` needs Linux and an Intel GPU, so on any other machine the tests that replay captures are the only way to exercise the code. They cover `SampleCollector` but not the stream handling in `stream.py`.
+`intel_gpu_top` needs Linux and an Intel GPU, so tests replay captures or use `tests/fake_intel_gpu_top.py`, which stands in for it on `PATH` and plays a script per spawn. `tests/test_e2e.py` runs the real exporter as a subprocess, using `main(port=0, timing=...)` for an ephemeral port and short timeouts. Those arguments exist for tests and aren't configuration. Teardown kills the exporter's process group, so a test can't leave a child behind. Backoff sequences are asserted in `tests/test_supervisor.py` with no sleeping, because the fake's startup time varies too much to measure them end to end.
 
 ```bash
 # Paseo runs these three when it creates a worktree. uv is required: it provides CI's Python, as pytest needs a newer one than some systems ship
@@ -42,11 +42,13 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 **Missing data is a gap, never a 0.** A value that isn't in the sample produces no series, and a real 0 stays 0. Unknown input logs one warning per distinct key and raises `igpu_parse_warnings_total`, which must stay at 0 on healthy hardware. So `power`, `imc-bandwidth` and `clients`, which some hardware legitimately omits, log at INFO instead. `update()` must not raise on sample content.
 
-**There are two stream parsers in `stream.py`, selected by `IS_DOCKER`.** The Dockerfile sets it, so the image always uses the first one:
-- Docker path: strips each line and retries `json.loads` on the accumulated buffer until it parses.
-- Native path: buffers lines until one is exactly `},\n`, then parses the buffer without that trailing comma. This relies on `intel_gpu_top`'s indentation, since nested closing braces are tab-indented and don't match.
+**There is one stream parser, `StreamDecoder` in `stream.py`.** It reads `stdout` in chunks and calls `raw_decode` over a text buffer, skipping whitespace, `[`, `]` and `,` between values. It never reads by line, because a sample's closing `}` has no trailing newline, and a line reader would deliver every sample one period late. Truncated and malformed input look the same to `raw_decode`, so the decoder waits for more data and the watchdog restarts the child. There is no resynchronisation, and each child gets a new decoder.
 
-Both expect the shape in `tests/data.json`: objects separated by `},` with no enclosing array. The `intel_gpu_top` 2.3 output in `tests/fixtures/` has a leading `[` and no commas, which breaks both: neither path ever parses a sample, so no sample metrics appear. Neither passes `-p` yet, so a parsed 2.x sample would have no instance suffixes, which warn and export no engine series. The image's `intel_gpu_top` 2.0 binary contains a `[\n` string, so check this first if sample metrics are missing.
+**`supervisor.py` owns the child.** The watchdog thread runs `Supervisor.run()`, with one `stdout` and one `stderr` reader per child. Any exit, kill or failed spawn goes through the same capped backoff. The stall deadline runs from the later of this child's spawn and the last sample, so a new child always gets a full timeout. `igpu_up` uses the age of the last sample overall, and only an object counts as a sample.
+
+**While `igpu_up` is 0, only the four health metrics are served,** so a hang shows as a gap rather than a flat line. `SampleCollector` keeps the last sample, and `collect()` decides what to serve at scrape time.
+
+**The main thread only joins the watchdog.** The signal handlers set the stop event, and `Event.set()` in a handler can deadlock against `Event.wait()` on the same thread.
 
 ## Configuration
 
@@ -57,7 +59,6 @@ Set through environment variables, none of which are documented in the README:
 | `REFRESH_PERIOD_MS` | `intel_gpu_top -s` sample period, default `10000`. Keep Prometheus's `scrape_interval` in line with it. |
 | `DEVICE` | Passed to `intel_gpu_top -d` as a device filter; omitted if unset. |
 | `DEBUG` | Enables debug logging. Any non-empty value counts, including `false` and `0`. |
-| `IS_DOCKER` | Selects the parser, with the same truthiness as `DEBUG`. |
 
 ## Release
 

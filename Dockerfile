@@ -35,7 +35,7 @@ RUN \
         /var/tmp/*
 
 ENTRYPOINT ["/usr/bin/catatonit", "--", "/usr/local/bin/python"]
-CMD ["/app/intel-gpu-exporter.py"]
+CMD ["-m", "intel_gpu_exporter"]
 
 LABEL \
     org.opencontainers.image.title="intel-gpu-exporter" \

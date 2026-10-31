@@ -1,0 +1,86 @@
+[
+
+{
+	"period": {
+		"duration": 51.296604,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 41.048563,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Blitter/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"Video/1": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		},
+		"VideoEnhance/0": {
+			"busy": 0.000000,
+			"sema": 0.000000,
+			"wait": 0.000000,
+			"unit": "%"
+		}
+	},
+	"clients": {
+
+	}
+}
+{
+	"period": {
+		"duration": 2027.216537,
+		"unit": "ms"
+	},
+	"frequency": {
+		"requested": 0.000000,
+		"actual": 0.000000,
+		"unit": "MHz"
+	},
+	"interrupts": {
+		"count": 0.000000,
+		"unit": "irq/s"
+	},
+	"rc6": {
+		"value": 0.000000,
+		"unit": "%"
+	},
+	"power": {
+		"GPU": 0.000000,
+		"Package": 29.463102,
+		"unit": "W"
+	},
+	"engines": {
+		"Render/3D/0": {

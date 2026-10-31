@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
@@ -27,6 +28,7 @@ SECTION_METRICS = {
     },
 }
 OPTIONAL_SECTIONS = frozenset({"power", "imc-bandwidth", "clients"})
+DEFAULT_TIMEOUT = 30.0
 
 
 def sanitise_class(name):
@@ -35,14 +37,18 @@ def sanitise_class(name):
 
 
 class SampleCollector:
-    def __init__(self):
+    def __init__(self, timeout=DEFAULT_TIMEOUT, clock=time.monotonic):
+        self._timeout = timeout
+        self._clock = clock
         self._snapshot = {}
+        self._arrival = None
+        self._restarts = 0
         self._warned = set()
         self._noted_absent = set()
 
     def update(self, sample):
         if not isinstance(sample, dict):
-            self._warn("sample", f"Sample isn't an object: {sample!r}")
+            self.warn("sample", f"Sample isn't an object: {sample!r}")
             self._snapshot = {}
             return
 
@@ -63,10 +69,35 @@ class SampleCollector:
         self._section(sample, "clients")
 
         self._snapshot = snapshot
+        self._arrival = (self._clock(), time.time())
+
+    @property
+    def last_sample(self):
+        return self._arrival[0] if self._arrival else None
+
+    def count_restart(self):
+        self._restarts += 1
 
     def collect(self):
-        for name, (help_text, value) in self._snapshot.items():
-            yield GaugeMetricFamily(name, help_text, value=value)
+        arrival = self._arrival
+        up = arrival is not None and self._clock() - arrival[0] <= self._timeout
+        if up:
+            for name, (help_text, value) in self._snapshot.items():
+                yield GaugeMetricFamily(name, help_text, value=value)
+        yield GaugeMetricFamily(
+            "igpu_up", "1 if a sample arrived within the timeout", value=int(up)
+        )
+        if arrival is not None:
+            yield GaugeMetricFamily(
+                "igpu_last_sample_timestamp_seconds",
+                "Unix time the last sample arrived",
+                value=arrival[1],
+            )
+        yield CounterMetricFamily(
+            "igpu_collector_restarts",
+            "intel_gpu_top restarts since start",
+            value=self._restarts,
+        )
         yield CounterMetricFamily(
             "igpu_parse_warnings",
             "Distinct parse warnings logged since start",
@@ -84,7 +115,7 @@ class SampleCollector:
         ):
             match = ENGINE_KEY.fullmatch(key)
             if match is None:
-                self._warn(
+                self.warn(
                     key,
                     f"Engine key {key!r} has no instance suffix; "
                     "is intel_gpu_top running without -p?",
@@ -94,22 +125,22 @@ class SampleCollector:
             raw_class, instance = match.groups()
             engine_class = sanitise_class(raw_class)
             if not engine_class:
-                self._warn(key, f"Engine key {key!r} has no usable class name")
+                self.warn(key, f"Engine key {key!r} has no usable class name")
                 continue
 
             prefix = f"igpu_engines_{engine_class}_{instance}"
             if prefix in prefixes:
-                self._warn(key, f"Engine key {key!r} collides with another key")
+                self.warn(key, f"Engine key {key!r} collides with another key")
                 continue
             prefixes.add(prefix)
 
             values = engines[key]
             if not isinstance(values, dict):
-                self._warn(f"engines.{key}", f"Engine {key!r} isn't an object")
+                self.warn(f"engines.{key}", f"Engine {key!r} isn't an object")
                 continue
 
             if raw_class not in KNOWN_CLASSES:
-                self._warn(key, f"Unknown engine class in {key!r}; exporting {prefix}")
+                self.warn(key, f"Unknown engine class in {key!r}; exporting {prefix}")
 
             label = engine_class.replace("_", " ").title()
             for field in ENGINE_FIELDS:
@@ -121,7 +152,7 @@ class SampleCollector:
     def _section(self, sample, name):
         if name not in sample:
             if name not in OPTIONAL_SECTIONS:
-                self._warn(name, f"Expected section {name!r} is missing")
+                self.warn(name, f"Expected section {name!r} is missing")
             elif name not in self._noted_absent:
                 self._noted_absent.add(name)
                 log.info("Section %r is absent from intel_gpu_top output", name)
@@ -130,7 +161,7 @@ class SampleCollector:
         section = sample[name]
         if isinstance(section, dict):
             return section
-        self._warn(name, f"Section {name!r} isn't an object: {section!r}")
+        self.warn(name, f"Section {name!r} isn't an object: {section!r}")
         return None
 
     def _number(self, values, field, key):
@@ -140,10 +171,10 @@ class SampleCollector:
                 return float(value)
             except OverflowError:
                 pass
-        self._warn(key, f"Expected a number for {key!r}, got {value!r}")
+        self.warn(key, f"Expected a number for {key!r}, got {value!r}")
         return None
 
-    def _warn(self, key, message):
+    def warn(self, key, message):
         if key not in self._warned:
             self._warned.add(key)
             log.warning(message)

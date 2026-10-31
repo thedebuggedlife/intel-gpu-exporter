@@ -1,6 +1,9 @@
+import pytest
 from helpers import DATA_JSON, exposition, load_samples, scrape
+from prometheus_client import CollectorRegistry
 from prometheus_client.parser import text_string_to_metric_families
 
+from intel_gpu_exporter import __main__ as entry_point
 from intel_gpu_exporter.metrics import SampleCollector
 
 CONTRACT_METRICS = [
@@ -44,3 +47,28 @@ def test_contract_metrics_present_as_gauges():
 
 def test_full_sample_raises_no_warnings():
     assert scrape(collector_with_full_sample())["igpu_parse_warnings_total"] == 0
+
+
+def test_default_port(monkeypatch):
+    class Bound(Exception):
+        pass
+
+    def bind(port):
+        raise Bound(port)
+
+    monkeypatch.setattr(entry_point, "start_http_server", bind)
+    monkeypatch.setattr(entry_point, "REGISTRY", CollectorRegistry())
+
+    with pytest.raises(Bound) as bound:
+        entry_point.main()
+
+    assert bound.value.args == (8080,)
+
+
+def test_metrics_path(fake_gpu, start_exporter):
+    fake_gpu.play([["hang"]])
+
+    status, body = start_exporter().get("/metrics")
+
+    assert status == 200
+    assert "igpu_up 0.0" in body

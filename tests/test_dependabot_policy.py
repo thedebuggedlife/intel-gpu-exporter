@@ -45,6 +45,16 @@ SECURITY = "fix(deps): [security] bump a from 1.0.0 to 1.1.0"
         (DIGEST, "pip", "", "", "", "review"),
         (TAG_CHANGE, "docker", MINOR, "", "", "review"),
         (TAG_CHANGE, "docker", "", "", "", "review"),
+        (TAG_CHANGE, "docker", PATCH, "", "", "review"),
+        ("fix(deps): bump alpine from 3.24 to 4.0", "docker", PATCH, "", "", "review"),
+        (
+            "fix(deps): [security] bump alpine from 3.24 to 3.25",
+            "docker",
+            MINOR,
+            "OPEN",
+            "GHSA-x",
+            "review",
+        ),
         (
             "fix(deps): bump alpine from 3.24 to `be26560`",
             "docker",

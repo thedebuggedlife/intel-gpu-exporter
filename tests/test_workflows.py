@@ -118,6 +118,19 @@ def test_contents_write_only_in_the_two_named_jobs():
     }
 
 
+@pytest.mark.parametrize(
+    ("workflow", "job"),
+    [
+        ("publish.yaml", "push"),
+        ("release.yaml", "publish"),
+        ("release.yaml", "auto-merge"),
+    ],
+)
+def test_no_condition_overrides_a_failed_dependency(workflow, job):
+    condition = load(workflow)["jobs"][job]["if"]
+    assert not re.search(r"always\(\)|cancelled\(\)|failure\(\)", condition)
+
+
 def test_push_needs_the_gate():
     assert load("publish.yaml")["jobs"]["push"]["needs"] == "gate"
 
@@ -185,6 +198,11 @@ def test_release_runs_only_from_main():
     triggers = load("release.yaml")[True]
     assert triggers["push"] == {"branches": ["main"]}
     assert set(triggers) == {"push", "workflow_dispatch"}
+
+
+def test_release_please_ignores_a_dispatch_from_another_branch():
+    job = load("release.yaml")["jobs"]["release-please"]
+    assert job["if"] == "github.ref == 'refs/heads/main'"
 
 
 def test_only_publish_names_ghcr():

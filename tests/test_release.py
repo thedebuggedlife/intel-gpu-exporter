@@ -189,6 +189,18 @@ def test_server_error_on_read_fails_before_any_copy(skopeo):
     assert skopeo.copied_tags == []
 
 
+def test_unknown_repository_reads_as_absent(skopeo):
+    skopeo.write(read_failure="name unknown: repository name not known to registry\n")
+    assert release.registry_digest(REPOSITORY, "1.2.3") is None
+
+
+def test_denied_read_fails_rather_than_reading_as_absent(skopeo):
+    skopeo.write(read_failure="reading manifest 1.2.3: denied: permission_denied\n")
+    with pytest.raises(ReleaseError, match="denied"):
+        run_publish()
+    assert skopeo.copied_tags == []
+
+
 def test_archive_digest_mismatch_copies_nothing(skopeo):
     with pytest.raises(ReleaseError, match="tested"):
         run_publish(expected=digest_of(OTHER_BODY))

@@ -13,6 +13,7 @@ from pathlib import Path
 
 NUMBER = "(0|[1-9][0-9]*)"
 VERSION = re.compile(rf"v?{NUMBER}\.{NUMBER}\.{NUMBER}(?:-rc\.([1-9][0-9]*))?")
+NOT_FOUND = ("manifest unknown", "name unknown")
 
 
 class ReleaseError(Exception):
@@ -105,7 +106,7 @@ def registry_digest(repository: str, tag: str) -> str | None:
     if result.returncode == 0:
         return digest_of(result.stdout)
     error = result.stderr.decode().strip()
-    if "manifest unknown" in error.lower():
+    if any(text in error.lower() for text in NOT_FOUND):
         return None
     raise ReleaseError(f"can't read {repository}:{tag}: {error}")
 

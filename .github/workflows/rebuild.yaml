@@ -1,0 +1,107 @@
+name: rebuild
+
+on:
+  schedule:
+    - cron: "23 5 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rebuild
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gate.yaml
+
+  sarif:
+    name: sarif
+    needs: gate
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the scan results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sarif
+          path: scan
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: scan/grype.sarif
+          category: grype
+
+  update:
+    name: update
+    needs: gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the new lock
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-lock
+          path: built
+
+      - name: Create app token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open, update or close the rebuild PR
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: scripts/rebuild_pr.py --lock built/image.lock
+
+  track-failure:
+    name: track-failure
+    needs:
+      - gate
+      - update
+    # failure() alone misses a timeout, which reports as cancelled
+    if: always() && github.ref == 'refs/heads/main' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: track-failure
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report on the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/track-failure.sh

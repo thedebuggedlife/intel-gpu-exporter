@@ -2,9 +2,13 @@ FROM docker.io/library/alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aa
 
 FROM base AS tools
 
-RUN apk add --no-cache \
+# The final stage has no package entry for the tool, and apk list exits 0 when it finds nothing
+RUN \
+    apk add --no-cache \
         --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing \
-        igt-gpu-tools
+        igt-gpu-tools \
+    && apk list --installed igt-gpu-tools | cut -d ' ' -f 1 >/usr/bin/intel_gpu_top.version \
+    && grep -q '^igt-gpu-tools-[0-9]' /usr/bin/intel_gpu_top.version
 
 FROM base AS python
 
@@ -24,7 +28,7 @@ RUN \
     && apk add --no-cache catatonit eudev-libs python3 \
     && rm -rf /usr/lib/python3.*/ensurepip
 
-COPY --from=tools /usr/bin/intel_gpu_top /usr/bin/intel_gpu_top
+COPY --from=tools /usr/bin/intel_gpu_top /usr/bin/intel_gpu_top.version /usr/bin/
 COPY --from=python /opt/venv /opt/venv
 COPY intel_gpu_exporter /app/intel_gpu_exporter
 

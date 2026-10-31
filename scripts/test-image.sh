@@ -90,6 +90,15 @@ if grep --extended-regexp '(^|/)(pip[0-9.]*|pip-[0-9][^/]*|ensurepip)(/|$)' "$li
 fi
 pass "no .git, tests or pip in the filesystem"
 
+tool_version=$(docker run --rm --entrypoint /bin/cat "$image" /usr/bin/intel_gpu_top.version) ||
+    fail "the tool's version file can't be read"
+grep --quiet --line-regexp --extended-regexp 'igt-gpu-tools-[0-9][^ ]*-r[0-9]+' <<<"$tool_version" ||
+    fail "the tool's version file reads '$tool_version'"
+pass "the tool's version file reads $tool_version"
+
+"$repo/scripts/image_lock.py" "$image" >/dev/null || fail "image.lock can't be generated"
+pass "image.lock can be generated"
+
 no_gpu=$(docker run --detach --publish 127.0.0.1::8080 "${short_health[@]}" "$image")
 containers+=("$no_gpu")
 wait_for "no GPU: /metrics reports igpu_up 0" "$no_gpu" metric_reads "$no_gpu" 8080 'igpu_up 0\.0'

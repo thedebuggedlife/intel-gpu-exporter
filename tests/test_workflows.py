@@ -124,6 +124,7 @@ def test_contents_write_only_in_the_two_named_jobs():
         ("publish.yaml", "push"),
         ("release.yaml", "publish"),
         ("release.yaml", "auto-merge"),
+        ("rebuild.yaml", "update"),
     ],
 )
 def test_no_condition_overrides_a_failed_dependency(workflow, job):
@@ -318,3 +319,247 @@ def test_fetch_metadata_looks_up_alerts():
 def test_auto_merge_checks_its_credentials_first():
     names = [s["name"] for s in auto_merge_job()["steps"]]
     assert names.index("Check the app credentials") < names.index("Create app token")
+
+
+def test_release_pr_lookup_ignores_a_fork_using_the_same_branch_name():
+    steps = load("release.yaml")["jobs"]["auto-merge"]["steps"]
+    run = next(s for s in steps if "gh pr merge" in s.get("run", ""))["run"]
+    assert (
+        "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:"
+        "release-please--branches--main&state=open" in run
+    )
+    assert "gh pr list" not in run
+
+
+def gate_steps():
+    return steps_of(load("gate.yaml")["jobs"]["gate"])
+
+
+def gate_step_index(text):
+    return next(i for i, s in enumerate(gate_steps()) if text in str(s))
+
+
+def artifact_upload(name):
+    return next(
+        s
+        for s in gate_steps()
+        if "upload-artifact" in s.get("uses", "") and s["with"]["name"] == name
+    )
+
+
+def test_gate_records_the_image_after_testing_it():
+    assert gate_step_index("test-image.sh") < gate_step_index("image_lock.py")
+
+
+def test_gate_records_the_tested_image():
+    run = gate_steps()[gate_step_index("image_lock.py")]["run"]
+    assert "scripts/image_lock.py intel-gpu-exporter:gate" in run
+
+
+def test_gate_uploads_the_lock_and_fails_without_one():
+    upload = artifact_upload("image-lock")
+    assert upload["with"]["path"].endswith("/image.lock")
+    assert upload["with"]["if-no-files-found"] == "error"
+
+
+@pytest.mark.parametrize("name", ["image-lock", "sarif"])
+def test_gate_artifacts_uploaded_before_it_can_fail_allow_a_re_run(name):
+    assert artifact_upload(name)["with"]["overwrite"] is True
+
+
+def test_gate_keeps_scan_results_when_the_scan_fails():
+    upload = artifact_upload("sarif")
+    assert upload["if"] == "${{ !cancelled() }}"
+    assert gate_step_index("scan-image.sh") < gate_steps().index(upload)
+
+
+def test_gate_scan_writes_the_uploaded_sarif_file():
+    scan = gate_steps()[gate_step_index("scan-image.sh")]
+    assert artifact_upload("sarif")["with"]["path"] in scan["run"]
+
+
+def publish_steps():
+    return load("publish.yaml")["jobs"]["push"]["steps"]
+
+
+def test_published_release_carries_the_lock_the_gate_recorded():
+    download = next(
+        s
+        for s in publish_steps()
+        if "download-artifact" in s.get("uses", "")
+        and s["with"]["name"] == "image-lock"
+    )
+    upload = next(s for s in publish_steps() if "gh release upload" in s.get("run", ""))
+    assert f"{download['with']['path']}/image.lock" in upload["run"]
+    assert "--clobber" in upload["run"]
+
+
+def test_lock_is_attached_while_the_release_is_still_only_a_draft():
+    runs = [s.get("run", "") for s in publish_steps()]
+    attach = next(i for i, r in enumerate(runs) if "gh release upload" in r)
+    push = next(i for i, r in enumerate(runs) if "release.py publish" in r)
+    edit = next(i for i, r in enumerate(runs) if "--draft=false" in r)
+    assert attach < push < edit
+
+
+REBUILD = "rebuild.yaml"
+
+
+def rebuild_job(name):
+    return load(REBUILD)["jobs"][name]
+
+
+def test_rebuild_runs_only_on_its_schedule_or_by_hand():
+    triggers = load(REBUILD)[True]
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert len(triggers["schedule"]) == 1
+
+
+def test_rebuild_runs_one_at_a_time_without_cancelling():
+    assert load(REBUILD)["concurrency"] == {
+        "group": "rebuild",
+        "cancel-in-progress": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "publish.yaml",
+        "release.yaml",
+        "release.py",
+        "skopeo",
+        "gh release",
+        "PUBLISH_ENABLED",
+        "packages:",
+        "gh pr merge",
+    ],
+)
+def test_rebuild_has_no_way_to_publish(text):
+    assert text not in (WORKFLOWS / REBUILD).read_text()
+
+
+def test_rebuild_only_calls_the_read_only_gate():
+    job = rebuild_job("gate")
+    assert job["uses"] == "./.github/workflows/gate.yaml"
+    assert job["permissions"] == {"contents": "read"}
+    assert "secrets" not in job
+    called = [j["uses"] for j in load(REBUILD)["jobs"].values() if "uses" in j]
+    assert called == ["./.github/workflows/gate.yaml"]
+
+
+def test_rebuild_update_needs_the_gate_and_main():
+    job = rebuild_job("update")
+    assert job["needs"] == "gate"
+    assert job["if"] == "github.ref == 'refs/heads/main'"
+    assert job["permissions"] == {"contents": "read"}
+
+
+def rebuild_update_step(text):
+    return next(s for s in rebuild_job("update")["steps"] if text in str(s))
+
+
+def test_rebuild_compares_the_lock_the_gate_recorded():
+    download = rebuild_update_step("download-artifact")
+    assert download["with"]["name"] == "image-lock"
+    run = rebuild_update_step("rebuild_pr.py")["run"]
+    assert f"--lock {download['with']['path']}/image.lock" in run
+
+
+def test_rebuild_pr_is_opened_with_the_app_token():
+    step = rebuild_update_step("rebuild_pr.py")
+    assert step["env"]["GH_TOKEN"] == "${{ steps.token.outputs.token }}"
+
+
+def test_rebuild_token_holds_only_what_the_pr_needs():
+    step = rebuild_update_step("create-github-app-token")
+    permissions = {k: v for k, v in step["with"].items() if k.startswith("permission-")}
+    assert permissions == {
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+
+
+def test_rebuild_checks_out_no_credentials():
+    for name in ("update", "sarif", "track-failure"):
+        checkout = next(
+            s
+            for s in rebuild_job(name)["steps"]
+            if "actions/checkout" in s.get("uses", "")
+        )
+        assert checkout["with"]["persist-credentials"] is False
+
+
+def test_hold_is_reached_through_the_shared_script():
+    script = (REPO / "scripts" / "rebuild_pr.py").read_text()
+    assert "hold-for-review.sh" in script
+    assert "requested_reviewers" not in script
+
+
+TRACKED = {
+    "rebuild.yaml": {"gate", "update"},
+    "release.yaml": {"release-please", "auto-merge", "publish"},
+}
+
+
+@pytest.mark.parametrize("workflow", TRACKED)
+def test_tracker_watches_every_job_that_can_fail(workflow):
+    job = load(workflow)["jobs"]["track-failure"]
+    assert set(job["needs"]) == TRACKED[workflow]
+    assert set(load(workflow)["jobs"]) - set(job["needs"]) <= {"track-failure", "sarif"}
+
+
+@pytest.mark.parametrize("workflow", TRACKED)
+def test_tracker_fires_on_a_failure_or_a_timeout(workflow):
+    assert load(workflow)["jobs"]["track-failure"]["if"] == (
+        "always() && github.ref == 'refs/heads/main' && "
+        "(contains(needs.*.result, 'failure') || "
+        "contains(needs.*.result, 'cancelled'))"
+    )
+
+
+@pytest.mark.parametrize("workflow", TRACKED)
+def test_tracker_uses_the_runs_own_token(workflow):
+    steps = load(workflow)["jobs"]["track-failure"]["steps"]
+    step = next(s for s in steps if "track-failure.sh" in s.get("run", ""))
+    assert step["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+
+@pytest.mark.parametrize("workflow", TRACKED)
+def test_tracker_stays_red_when_it_fails(workflow):
+    assert "continue-on-error" not in load(workflow)["jobs"]["track-failure"]
+
+
+def test_two_workflows_never_report_at_the_same_moment():
+    rebuild, release = (
+        load(workflow)["jobs"]["track-failure"]["concurrency"] for workflow in TRACKED
+    )
+    assert rebuild == release == {"group": "track-failure", "cancel-in-progress": False}
+
+
+def test_issues_write_only_in_the_tracker_jobs():
+    assert set(permission_grants("issues")) == {
+        ("rebuild.yaml", "track-failure"),
+        ("release.yaml", "track-failure"),
+    }
+
+
+def test_security_events_write_only_in_the_sarif_job():
+    assert set(permission_grants("security-events")) == {("rebuild.yaml", "sarif")}
+
+
+def test_only_the_rebuild_uploads_sarif():
+    uploads = [p.name for p in workflow_paths() if "upload-sarif" in p.read_text()]
+    assert uploads == [REBUILD]
+
+
+def test_sarif_runs_even_when_the_gate_fails():
+    job = rebuild_job("sarif")
+    assert job["needs"] == "gate"
+    assert job["if"].startswith("always()")
+
+
+def test_sarif_cannot_trip_the_tracker():
+    assert rebuild_job("sarif")["continue-on-error"] is True
+    assert "sarif" not in rebuild_job("track-failure")["needs"]
+    assert "sarif" not in str(rebuild_job("update"))

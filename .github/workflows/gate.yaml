@@ -100,11 +100,33 @@ jobs:
       - name: Test image
         run: scripts/test-image.sh intel-gpu-exporter:gate
 
+      - name: Record the image's contents
+        run: |
+          mkdir built
+          scripts/image_lock.py intel-gpu-exporter:gate >built/image.lock
+
+      - name: Upload the image's contents
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-lock
+          path: built/image.lock
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Scan image
         env:
           CONFIG_DIGEST: ${{ steps.identity.outputs.config }}
           SCAN_FORCE_FAIL: ${{ vars.SCAN_FORCE_FAIL }}
-        run: scripts/scan-image.sh image.tar "$CONFIG_DIGEST"
+        run: scripts/scan-image.sh image.tar "$CONFIG_DIGEST" built/grype.sarif
+
+      - name: Upload the scan results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sarif
+          path: built/grype.sarif
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Rehearse the push
         env:

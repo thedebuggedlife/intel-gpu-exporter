@@ -10,27 +10,28 @@ A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` packa
 
 ## Commands
 
-`.github/workflows/ci.yaml` runs `ruff` and `pytest` on Python 3.13, matching the `Dockerfile`, on every PR and on pushes to `main`. Its check is named `lint-and-test`. Every job declares explicit `permissions:` because default tokens are read-only, and every Action is pinned by full commit SHA with the version in a comment.
+`.github/workflows/ci.yaml` runs on every PR and on pushes to `main`, with two checks. `lint-and-test` runs `ruff` and `pytest` on Python 3.14, the version of Alpine's `python3` in the `Dockerfile`, so the two move together. `image-test` builds the image and runs `scripts/test-image.sh`. Every job declares explicit `permissions:` because default tokens are read-only, and every Action is pinned by full commit SHA with the version in a comment.
 
-Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: hash-locking the runtime file would make pip reject the unhashed dev pins.
+Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: `requirements.txt` is hash-locked, which would make pip reject the unhashed dev pins. It lists the wheel and sdist hashes by hand, with no `.in` file, in a format Dependabot's requirements updater supports. A new required dependency would need its own pin and hashes, and pip fails without them.
 
-`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `loaded.json` is the only one with clients, and its bytes must not change, because its framing is under test. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand and covers the configuration contract, so keep it independent of the code. `.dockerignore` excludes `tests/` from the image.
+`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `loaded.json` is the only one with clients, and its bytes must not change, because its framing is under test. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand and covers the configuration contract, so keep it independent of the code. `.dockerignore` denies everything, then allows `intel_gpu_exporter` and `requirements.txt`.
 
 `intel_gpu_top` needs Linux and an Intel GPU, so tests replay captures or use `tests/fake_intel_gpu_top.py`, which stands in for it on `PATH` and plays a script per spawn. `tests/test_e2e.py` runs the real exporter as a subprocess, using `main(port=0, timing=...)` for an ephemeral port and short timeouts. Those arguments exist for tests and aren't configuration. Teardown kills the exporter's process group, so a test can't leave a child behind. Backoff sequences are asserted in `tests/test_supervisor.py` with no sleeping, because the fake's startup time varies too much to measure them end to end.
 
 ```bash
 # Paseo runs these three when it creates a worktree. uv is required: it provides CI's Python, as pytest needs a newer one than some systems ship
-uv venv --clear --seed --python 3.13 .venv
+uv venv --clear --seed --python 3.14 .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/pip install -r requirements-dev.txt
 
-# The same checks CI runs
+# The same checks as CI's lint-and-test
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/pytest
 
-# Build the image (linux/amd64 is the only target)
+# Build the image (linux/amd64 is the only target) and run CI's image test on it
 docker build --platform linux/amd64 -t intel-gpu-exporter .
+scripts/test-image.sh intel-gpu-exporter
 
 # Run on a host with an Intel GPU; privileged and host PID are required
 docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-gpu-exporter
@@ -50,6 +51,10 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 **Signal handlers only record the request.** The main thread checks it in a timed join on the watchdog and sets the stop event itself. A signal taken by another thread doesn't wake an untimed join, and `Event.set()` can deadlock if a second handler interrupts it. Don't simplify either away: both were real hangs, and `tests/test_e2e.py` covers them. If the watchdog ends with no stop requested, the process exits non-zero, so a restart policy that acts on failure can bring it back.
 
+**The image has three build stages on a shared `base` stage, which holds the one pinned Alpine digest,** and the final one takes only what it needs. `tools` installs `igt-gpu-tools` from `edge/testing`, unpinned because `edge` drops old versions, and only the binary is copied out. `eudev-libs`, which is all it links besides musl, is installed in the final stage rather than copied, because a copied file is invisible to scanners and the SBOM. `intel_gpu_top` itself stays invisible to them. `python` builds a venv and removes its `pip`. The final stage also deletes `ensurepip`, because Alpine's `python3` bundles a pip wheel there, and runs `apk upgrade`, so a rebuild picks up fixes to packages in the base image. A new library in the tool breaks `intel_gpu_top -h` in `image-test` until it's added there.
+
+**`HEALTHCHECK` runs `intel_gpu_exporter.healthcheck`,** which gets `/metrics` on `127.0.0.1` at `LISTEN_PORT` and passes only on the line `igpu_up 1.0`. It uses TCP rather than `/proc` because PID 1 is the host's init under `--pid=host`, and `http.client` because `urllib` would honour a proxy in the environment. A host with no GPU reports unhealthy while the process keeps running, which is expected. `scripts/test-image.sh` covers both states on the real image, with `--pid=host` and a non-default port on the healthy one.
+
 ## Configuration
 
 Set through environment variables, none of which are documented in the README. `config.py` reads them once at startup into a frozen dataclass. An invalid number prints one line and exits non-zero before the port is bound or the child is started.
@@ -63,15 +68,15 @@ Set through environment variables, none of which are documented in the README. `
 
 ## Release
 
-Nothing publishes images: no workflow pushes to `ghcr.io`, and there are no versioned tags. Nothing updates dependencies automatically either, so the `prometheus_client` pin, the dev tool pins, the Python base image and the Action SHAs only change by hand.
+Nothing publishes images: no workflow pushes to `ghcr.io`, and there are no versioned tags. Nothing updates dependencies automatically either, so the `prometheus_client` pin, the dev tool pins, the Alpine base digest and the Action SHAs only change by hand. Alpine packages, including `igt-gpu-tools`, change with any rebuild.
 
 ## Agent workflow (superpowers + Paseo)
 
 These are declared preferences; they override the superpowers skills' defaults.
 
 - **Worktrees are owned by Paseo** (`paseo.json` creates `.venv` from `requirements.txt` and `requirements-dev.txt` on creation; they live under `~/.paseo/worktrees/`). If already in a linked worktree, work there. Never use `EnterWorktree` or `git worktree add`. From the main checkout, create a Paseo worktree (`paseo worktree create --mode branch-off --new-branch <name>`, or `mcp__paseo__create_workspace`) — the main checkout may be shared with other agents. Don't bump the `requirements.txt` pin unless that is the task; if dependencies are missing, run `.venv/bin/pip install -r requirements.txt` and `.venv/bin/pip install -r requirements-dev.txt`.
-- **Baseline / verification** is `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pytest`, the same checks as CI and Paseo's `test` script. Run `docker build` only when changing the `Dockerfile`, `.dockerignore` or `requirements.txt`.
-- **Image contents:** the Dockerfile's `COPY . .` takes everything `.dockerignore` doesn't exclude, so add new non-runtime files there.
+- **Baseline / verification** is `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pytest`, the same checks as CI's `lint-and-test` and Paseo's `test` script. Run `docker build` and `scripts/test-image.sh` only when changing the `Dockerfile`, `.dockerignore`, `requirements.txt`, the healthcheck or that script.
+- **Image contents:** the `Dockerfile` copies explicit paths and `.dockerignore` is an allowlist, so a new runtime path needs adding to both.
 - **Finishing a branch:** always push and open a PR against `origin` (`thedebuggedlife`), never `upstream`; never merge into `main` locally. Archive the worktree through Paseo, then delete the merged branch. If a worktree was removed outside Paseo, run `scripts/lumen-prune.sh`.
 - **Specs** go in `docs/specs/YYYY-MM-DD-<feature>.md`, committed as `docs:` on the feature branch.
 - **Plans** and other agent workflow artifacts **never** get committed into the tree.

@@ -1,8 +1,13 @@
 import logging
+import re
 
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
 log = logging.getLogger(__name__)
+
+ENGINE_KEY = re.compile(r"(.*)/([0-9]+)")
+ENGINE_FIELDS = ("busy", "sema", "wait")
+KNOWN_CLASSES = frozenset({"Render/3D", "Blitter", "Video", "VideoEnhance", "Compute"})
 
 SECTION_METRICS = {
     "period": {"duration": ("igpu_period", "Period ms")},
@@ -22,6 +27,11 @@ SECTION_METRICS = {
     },
 }
 OPTIONAL_SECTIONS = frozenset({"power", "imc-bandwidth", "clients"})
+
+
+def sanitise_class(name):
+    words = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", name).lower()
+    return re.sub(r"[^a-z0-9]+", "_", words).strip("_")
 
 
 class SampleCollector:
@@ -45,7 +55,10 @@ class SampleCollector:
                 if value is not None:
                     snapshot[name] = (help_text, value)
 
-        self._section(sample, "engines")
+        engines = self._section(sample, "engines")
+        if engines is not None:
+            self._engines(engines, snapshot)
+
         self._section(sample, "clients")
 
         self._snapshot = snapshot
@@ -61,6 +74,48 @@ class SampleCollector:
 
     def describe(self):
         return []
+
+    def _engines(self, engines, snapshot):
+        prefixes = set()
+        # Known classes go first so an unknown class can't displace a contract metric
+        for key in sorted(
+            engines, key=lambda k: k.rpartition("/")[0] not in KNOWN_CLASSES
+        ):
+            match = ENGINE_KEY.fullmatch(key)
+            if match is None:
+                self._warn(
+                    key,
+                    f"Engine key {key!r} has no instance suffix; "
+                    "is intel_gpu_top running without -p?",
+                )
+                continue
+
+            raw_class, instance = match.groups()
+            engine_class = sanitise_class(raw_class)
+            if not engine_class:
+                self._warn(key, f"Engine key {key!r} has no usable class name")
+                continue
+
+            values = engines[key]
+            if not isinstance(values, dict):
+                self._warn(f"engines.{key}", f"Engine {key!r} isn't an object")
+                continue
+
+            prefix = f"igpu_engines_{engine_class}_{instance}"
+            if prefix in prefixes:
+                self._warn(key, f"Engine key {key!r} collides with another key")
+                continue
+            prefixes.add(prefix)
+
+            if raw_class not in KNOWN_CLASSES:
+                self._warn(key, f"Unknown engine class in {key!r}; exporting {prefix}")
+
+            label = engine_class.replace("_", " ").title()
+            for field in ENGINE_FIELDS:
+                value = self._number(values, field, f"engines.{key}.{field}")
+                if value is not None:
+                    help_text = f"{label} {instance} {field} utilisation %"
+                    snapshot[f"{prefix}_{field}"] = (help_text, value)
 
     def _section(self, sample, name):
         if name not in sample:

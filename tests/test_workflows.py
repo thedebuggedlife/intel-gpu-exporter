@@ -96,3 +96,105 @@ def test_gate_rehearses_only_on_localhost():
     assert len(pushes) == 1
     assert "--repository localhost:5000/rehearsal" in pushes[0]
     assert "ghcr.io" not in (WORKFLOWS / "gate.yaml").read_text()
+
+
+def permission_grants(permission):
+    for path, name, job in all_jobs():
+        if job["permissions"].get(permission) == "write":
+            yield path, name
+
+
+def test_packages_write_only_in_the_two_named_jobs():
+    assert set(permission_grants("packages")) == {
+        ("publish.yaml", "push"),
+        ("release.yaml", "publish"),
+    }
+
+
+def test_contents_write_only_in_the_two_named_jobs():
+    assert set(permission_grants("contents")) == {
+        ("publish.yaml", "push"),
+        ("release.yaml", "publish"),
+    }
+
+
+def test_push_needs_the_gate():
+    assert load("publish.yaml")["jobs"]["push"]["needs"] == "gate"
+
+
+def test_gate_is_called_at_the_tag():
+    gate = load("publish.yaml")["jobs"]["gate"]
+    assert gate["uses"] == "./.github/workflows/gate.yaml"
+    assert gate["with"]["ref"] == "${{ inputs.tag }}"
+
+
+def test_push_requires_switch_and_main():
+    condition = load("publish.yaml")["jobs"]["push"]["if"]
+    assert "vars.PUBLISH_ENABLED == 'true'" in condition
+    assert "github.ref == 'refs/heads/main'" in condition
+    assert "||" not in condition
+
+
+def test_push_uses_the_digest_the_gate_tested():
+    steps = load("publish.yaml")["jobs"]["push"]["steps"]
+    step = next(s for s in steps if "release.py publish" in s.get("run", ""))
+    assert step["env"]["DIGEST"] == "${{ needs.gate.outputs.digest }}"
+    assert "--expected-digest" in step["run"]
+
+
+def test_draft_is_published_only_after_the_push():
+    runs = [s.get("run", "") for s in load("publish.yaml")["jobs"]["push"]["steps"]]
+    push = next(i for i, r in enumerate(runs) if "release.py publish" in r)
+    edit = next(i for i, r in enumerate(runs) if "--draft=false" in r)
+    assert push < edit
+
+
+def test_release_calls_publish_only_with_the_switch():
+    job = load("release.yaml")["jobs"]["publish"]
+    assert job["uses"] == "./.github/workflows/publish.yaml"
+    assert job["needs"] == "release-please"
+    assert "vars.PUBLISH_ENABLED == 'true'" in job["if"]
+    assert "needs.release-please.outputs.created == 'true'" in job["if"]
+    assert "||" not in job["if"]
+
+
+def test_auto_merge_job_requires_the_switch():
+    job = load("release.yaml")["jobs"]["auto-merge"]
+    assert job["if"] == "vars.PUBLISH_ENABLED == 'true'"
+
+
+def test_auto_merge_applies_the_guard_with_the_manifest():
+    steps = load("release.yaml")["jobs"]["auto-merge"]["steps"]
+    run = next(s for s in steps if "gh pr merge" in s.get("run", ""))["run"]
+    assert "release.py check" in run
+    assert "--manifest .release-please-manifest.json" in run
+    assert run.index("release.py check") < run.index("gh pr merge")
+
+
+def test_skip_github_release_follows_the_switch():
+    steps = load("release.yaml")["jobs"]["release-please"]["steps"]
+    action = next(s for s in steps if "release-please-action" in s.get("uses", ""))
+    assert (
+        action["with"]["skip-github-release"] == "${{ vars.PUBLISH_ENABLED != 'true' }}"
+    )
+    assert action["with"]["config-file"] == "release-please-config.json"
+    assert action["with"]["manifest-file"] == ".release-please-manifest.json"
+
+
+def test_release_runs_only_from_main():
+    triggers = load("release.yaml")[True]
+    assert triggers["push"] == {"branches": ["main"]}
+    assert set(triggers) == {"push", "workflow_dispatch"}
+
+
+def test_only_publish_names_ghcr():
+    for path in workflow_paths():
+        if path.name != "publish.yaml":
+            assert "ghcr.io" not in path.read_text(), path.name
+
+
+def test_no_workflow_sets_the_switch():
+    for path in workflow_paths():
+        text = path.read_text()
+        assert "variable set" not in text, path.name
+        assert "PUBLISH_ENABLED:" not in text, path.name

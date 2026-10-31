@@ -1,0 +1,71 @@
+name: publish
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Git tag to release
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing git tag to release
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  gate:
+    name: gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gate.yaml
+    with:
+      ref: ${{ inputs.tag }}
+
+  push:
+    name: push
+    needs: gate
+    if: vars.PUBLISH_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the tested image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ github.token }}
+        run: skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$TOKEN"
+
+      - name: Push
+        env:
+          DIGEST: ${{ needs.gate.outputs.digest }}
+        run: |
+          scripts/release.py publish --repository ghcr.io/thedebuggedlife/intel-gpu-exporter \
+            --archive image.tar --tag "$TAG" --expected-digest "$DIGEST"
+          echo "Published \`$TAG\` as \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

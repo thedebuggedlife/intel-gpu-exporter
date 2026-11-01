@@ -18,28 +18,98 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
-  "id": 15,
-  "links": [
-    {
-      "asDropdown": true,
-      "icon": "external link",
-      "includeVars": false,
-      "keepTime": false,
-      "tags": [
-        "transcoding_user"
-      ],
-      "targetBlank": false,
-      "title": "Services",
-      "tooltip": "",
-      "type": "dashboards",
-      "url": ""
-    }
-  ],
+  "id": null,
+  "links": [],
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 13,
+      "options": {
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_up{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "igpu_up",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Exporter up",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -100,7 +170,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 3
       },
       "id": 6,
       "options": {
@@ -119,7 +189,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_render_3d_0_busy{instance=~\"${Instance}\"}",
@@ -131,7 +201,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_render_3d_0_sema{instance=~\"${Instance}\"}",
@@ -144,7 +214,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_render_3d_0_wait{instance=~\"${Instance}\"}",
@@ -161,7 +231,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -247,7 +317,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 3
       },
       "id": 7,
       "options": {
@@ -266,7 +336,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_blitter_0_busy{instance=~\"${Instance}\"}",
@@ -278,7 +348,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_blitter_0_sema{instance=~\"${Instance}\"}",
@@ -291,7 +361,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_blitter_0_wait{instance=~\"${Instance}\"}",
@@ -308,7 +378,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -369,7 +439,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 11
       },
       "id": 8,
       "options": {
@@ -388,7 +458,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_0_busy{instance=~\"${Instance}\"}",
@@ -400,7 +470,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_0_sema{instance=~\"${Instance}\"}",
@@ -413,7 +483,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_0_wait{instance=~\"${Instance}\"}",
@@ -422,6 +492,45 @@
           "legendFormat": "{{__name__}}",
           "range": true,
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_engines_video_1_busy{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "{{__name__}}",
+          "range": true,
+          "refId": "D",
+          "hide": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_engines_video_1_sema{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "{{__name__}}",
+          "range": true,
+          "refId": "E",
+          "hide": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_engines_video_1_wait{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "{{__name__}}",
+          "range": true,
+          "refId": "F",
+          "hide": false
         }
       ],
       "title": "Video",
@@ -430,7 +539,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -492,7 +601,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 11
       },
       "id": 9,
       "options": {
@@ -511,7 +620,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_enhance_0_busy{instance=~\"${Instance}\"}",
@@ -523,7 +632,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_enhance_0_sema{instance=~\"${Instance}\"}",
@@ -536,7 +645,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_engines_video_enhance_0_wait{instance=~\"${Instance}\"}",
@@ -553,7 +662,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -615,7 +724,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 19
       },
       "id": 10,
       "options": {
@@ -634,7 +743,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_frequency_actual{instance=~\"${Instance}\"}",
@@ -646,7 +755,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_frequency_requested{instance=~\"${Instance}\"}",
@@ -655,6 +764,32 @@
           "legendFormat": "{{__name__}}",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_gt_frequency_actual{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "{{__name__}} GT {{gt}}",
+          "range": true,
+          "refId": "C",
+          "hide": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "igpu_gt_frequency_requested{instance=~\"${Instance}\"}",
+          "instant": false,
+          "legendFormat": "{{__name__}} GT {{gt}}",
+          "range": true,
+          "refId": "D",
+          "hide": false
         }
       ],
       "title": "Frequency",
@@ -663,7 +798,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -725,7 +860,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 19
       },
       "id": 11,
       "options": {
@@ -744,7 +879,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_imc_bandwidth_reads{instance=~\"${Instance}\"}",
@@ -756,7 +891,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "igpu_imc_bandwidth_writes{instance=~\"${Instance}\"}",
@@ -767,7 +902,7 @@
           "refId": "B"
         }
       ],
-      "title": "Bandwith",
+      "title": "Bandwidth",
       "type": "timeseries"
     },
     {
@@ -776,14 +911,14 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 27
       },
       "id": 4,
       "panels": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -843,7 +978,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 28
           },
           "id": 1,
           "options": {
@@ -862,7 +997,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "igpu_power_package{instance=~\"${Instance}\"}",
@@ -874,7 +1009,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "igpu_power_gpu{instance=~\"${Instance}\"}",
@@ -891,7 +1026,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -948,8 +1083,8 @@
             "overrides": [
               {
                 "matcher": {
-                  "id": "byName",
-                  "options": "igpu_rc6"
+                  "id": "byRegexp",
+                  "options": "/rc6/"
                 },
                 "properties": [
                   {
@@ -976,7 +1111,7 @@
             "h": 8,
             "w": 8,
             "x": 12,
-            "y": 25
+            "y": 28
           },
           "id": 3,
           "options": {
@@ -995,7 +1130,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "igpu_rc6{instance=~\"${Instance}\"}",
@@ -1007,7 +1142,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "igpu_interrupts{instance=~\"${Instance}\"}",
@@ -1016,15 +1151,28 @@
               "legendFormat": "{{__name__}}",
               "range": true,
               "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "igpu_gt_rc6{instance=~\"${Instance}\"}",
+              "instant": false,
+              "legendFormat": "{{__name__}} GT {{gt}}",
+              "range": true,
+              "refId": "D",
+              "hide": false
             }
           ],
-          "title": "R6 & Interrupts ",
+          "title": "RC6 & Interrupts",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1056,7 +1204,7 @@
             "h": 8,
             "w": 4,
             "x": 20,
-            "y": 25
+            "y": 28
           },
           "id": 12,
           "options": {
@@ -1080,7 +1228,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "igpu_period{instance=~\"${Instance}\"}",
@@ -1092,6 +1240,102 @@
           ],
           "title": "Period",
           "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "id": 14,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "igpu_clients_count{instance=~\"${Instance}\"}",
+              "instant": false,
+              "legendFormat": "{{name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Clients",
+          "type": "timeseries"
         }
       ],
       "title": "Misc",
@@ -1108,16 +1352,27 @@
   "templating": {
     "list": [
       {
-        "current": {
-          "selected": false,
-          "text": "cloud.host.jhofer.local:8081",
-          "value": "cloud.host.jhofer.local:8081"
-        },
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {},
         "datasource": {
           "type": "prometheus",
-          "uid": "f9422c25-b9ee-4376-8bd2-6a67029728ce"
+          "uid": "${datasource}"
         },
-        "definition": "label_values({job=\"intel-gpu_exporter\"},instance)",
+        "definition": "label_values(igpu_up,instance)",
         "hide": 0,
         "includeAll": false,
         "multi": false,
@@ -1125,7 +1380,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values({job=\"intel-gpu_exporter\"},instance)",
+          "query": "label_values(igpu_up,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,

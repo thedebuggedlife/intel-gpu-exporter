@@ -16,10 +16,10 @@ groups:
   - name: intel-gpu-exporter
     rules:
       - alert: IntelGpuExporterDown
-        expr: igpu_up == 0 or absent(igpu_up)
+        expr: igpu_up == 0 or up{job="intel-gpu_exporter"} == 0
         for: 5m
       - alert: IntelGpuExporterParseWarnings
         expr: igpu_parse_warnings_total > 0
 ```
 
-`absent()` also fires if Prometheus can't scrape the exporter at all, which `igpu_up == 0` alone would miss.
+`up` covers a target Prometheus can't scrape at all, which `igpu_up == 0` alone would miss. Keep its `job` the same as `job_name` above.

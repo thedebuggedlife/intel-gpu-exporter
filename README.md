@@ -6,7 +6,7 @@ This is a maintained fork of [onedr0p/intel-gpu-exporter](https://github.com/one
 
 - **A drop-in replacement.** Existing metric names, the default port and the existing environment variables keep working. See [Moving from upstream](#moving-from-upstream).
 - **Correct.** Every engine is reported, and a broken data source is visible instead of reading as 0.
-- **Minimal.** The image holds the exporter, `intel_gpu_top` and what they need to run, and it runs with one added capability.
+- **Minimal.** The image adds the exporter and `intel_gpu_top` to a small Alpine base, and it runs with one added capability.
 - **Kept current automatically.** Dependency updates and weekly rebuilds become versioned, scanned releases. See [Update policy](#update-policy).
 
 Images are built for `linux/amd64` only.
@@ -137,7 +137,9 @@ These are all gauges.
 
 **Missing data is a gap, not 0.** A series exists only if `intel_gpu_top` reported the value, and a real 0 stays 0. `igpu_imc_bandwidth_*` and `igpu_power_*` are absent on hardware that doesn't report them. If the tool prints a section but can't read one of its counters, it prints 0 for that field, and the exporter can't tell that from a real 0.
 
-**While `igpu_up` is 0, only the health metrics are served,** so a hang shows as a gap rather than a flat line. The data comes back as soon as samples resume. `igpu_up` depends only on the age of the last sample, so it stays 1 through a quick restart. A hang that a restart cures can pass between two scrapes, so `igpu_collector_restarts_total` is what shows those.
+**While `igpu_up` is 0, only the four `igpu_*` health metrics are served,** so an outage shows as a gap rather than a flat line. The data comes back as soon as samples resume.
+
+**A hang that a restart cures may never show `igpu_up` 0.** `igpu_up` depends only on the age of the last sample, so until the timeout it stays 1 and the last values keep being served. The restart then follows about a second later, which can pass between two scrapes. `igpu_collector_restarts_total` is what shows those.
 
 **Load can appear on either video engine.** The kernel picks the engine, so the same work can show on `video_0` or `video_1`. Dashboards should show both.
 
@@ -150,8 +152,9 @@ These are all gauges.
 ### Known limitations
 
 - **`igpu_rc6` can read 0 when the GPU's real residency is higher, including at idle,** because that's what `intel_gpu_top` reports. The cause is unknown.
-- **A process name containing `"` makes `intel_gpu_top` emit invalid JSON.** So does a backslash that doesn't start a valid JSON escape. This shows as `igpu_up` 0 for as long as that process runs.
+- **A process name containing `"` makes `intel_gpu_top` emit invalid JSON.** So does a backslash that doesn't start a valid JSON escape. The name comes from client data, so this needs host PID visibility. It shows as `igpu_up` 0 for as long as that process runs, with restarts counted, and it doesn't raise `igpu_parse_warnings_total`.
 - **`igpu_gt_*` has only been tested against a hand-written fixture,** because no multi-GT hardware was available.
+- **`intel_gpu_top` reads the `i915` driver's counters,** so a GPU using the `xe` driver isn't expected to work. That comes from the tool's source and hasn't been tested.
 - **Long-run memory use hasn't been measured.** A 5-minute run used about the same memory as upstream, which is too short to rule out slow growth.
 - **Real hardware testing ran once,** before the first release, on one Intel iGPU with two video engines and a single GT. See [Update policy](#update-policy).
 
@@ -171,7 +174,7 @@ Change the image to `ghcr.io/thedebuggedlife/intel-gpu-exporter`. The `rolling` 
 - `IS_DOCKER` is no longer used, and you can remove it.
 - `igpu_imc_bandwidth_*` disappears on hardware that never reported it, because the 0 upstream served there was invented. More generally, a value that's missing is now a gap, so check any query or alert that expects a 0.
 - `DEBUG=false` now really means off. Upstream turned debug logging on for any non-empty value.
-- A stalled `intel_gpu_top` now shows as a gap with `igpu_up` 0, and it's restarted. Upstream kept serving the last values.
+- A stalled `intel_gpu_top` is now killed and restarted after the timeout, and if samples don't come back, that shows as a gap with `igpu_up` 0. Upstream kept serving the last values.
 - New series appear, such as `igpu_engines_video_1_*` and the health metrics.
 
 ## Update policy
@@ -196,7 +199,7 @@ Merging a release PR is automatic too, unless it raises the major version, which
 
 Each release runs the tests, builds one image, tests that image and scans it with [grype](https://github.com/anchore/grype). A fixable critical or high finding stops the release, unless a reviewed entry in [`grype-ignore.toml`](grype-ignore.toml), with a reason and an expiry date, allows it. The image pushed is the image that was tested.
 
-A failed check publishes nothing, and that version number isn't reused, so version numbers can skip.
+A failed check publishes no image. Its git tag stays and that version number isn't reused, so version numbers can skip.
 
 **There are no release candidates.** Automated validation is the standard for every release, so a security patch never waits for hardware testing. Testing on real hardware ran once before the first release. A problem only real hardware can show gets reported and fixed in the next release.
 
@@ -205,10 +208,10 @@ A failed check publishes nothing, and that version number isn't reused, so versi
 | Tag | Moves? |
 | --- | --- |
 | `X.Y.Z` | Never. A published version is never overwritten |
-| `X.Y` | Forwards only, to the newest patch |
+| `X.Y` | Forwards only, to the newest patch of that `X.Y` |
 | `latest` | Forwards only, and only on a stable release |
 
-Use `X.Y` to get patches, or `X.Y.Z` to choose when to update. Breaking what [Moving from upstream](#moving-from-upstream) says keeps working would take a `2.0.0`.
+Use `X.Y` to get patches, or `X.Y.Z` to choose when to update. `X.Y` stops moving when the next minor version comes out, and only the newest release gets fixes, so move to the new `X.Y` then, or use `latest`. Breaking what [Moving from upstream](#moving-from-upstream) says keeps working would take a `2.0.0`.
 
 ### What the image comes with
 

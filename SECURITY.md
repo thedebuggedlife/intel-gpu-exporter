@@ -14,7 +14,7 @@ Include the image tag or digest, what you did and what happened. This is a volun
 | Any older release | No. Update to the newest release |
 | Upstream's `rolling` image | No. It no longer receives fixes |
 
-Fixes go into a new release, not into older ones, and a published `X.Y.Z` tag never changes. The `X.Y` and `latest` tags move to the new release, as the [update policy](README.md#tags) describes.
+Fixes go into a new release, not into older ones, and a published `X.Y.Z` tag never changes. `latest` moves to the new release, and `X.Y` moves if the release is in that series, as the [update policy](README.md#tags) describes.
 
 ## Scope
 

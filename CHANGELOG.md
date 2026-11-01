@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/thedebuggedlife/intel-gpu-exporter/compare/v1.0.0...v1.0.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **deps:** bump prometheus-client from 0.21.1 to 0.26.0 ([#13](https://github.com/thedebuggedlife/intel-gpu-exporter/issues/13)) ([bb23ded](https://github.com/thedebuggedlife/intel-gpu-exporter/commit/bb23ded3bbb16757c9759a644f0c737dcdfa29f8))
+
 ## 1.0.0 (2026-11-01)
 
 

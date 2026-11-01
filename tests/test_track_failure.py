@@ -17,7 +17,7 @@ class Tracker:
     def __init__(self, path, bin_dir):
         self.path = path
         self.bin_dir = bin_dir
-        self.state = {"calls": [], "fail": [], "labels": [], "issues": []}
+        self.state = {"calls": [], "fail": [], "labels": [], "issues": [], "jobs": 1}
 
     def issue(self, state="open", labels=(LABEL,), **fields):
         number = len(self.state["issues"]) + 100
@@ -34,7 +34,7 @@ class Tracker:
         )
         return number
 
-    def run(self, workflow="rebuild"):
+    def run(self, workflow="rebuild", conclusion="failure"):
         self.path.write_text(json.dumps(self.state))
         env = os.environ | {
             "PATH": os.pathsep.join(
@@ -47,9 +47,10 @@ class Tracker:
             "FAKE_GITHUB_STATE": str(self.path),
             "GITHUB_REPOSITORY": "thedebuggedlife/intel-gpu-exporter",
             "GITHUB_SERVER_URL": "https://github.com",
-            "GITHUB_RUN_ID": "123",
-            "GITHUB_SHA": "abc123",
-            "GITHUB_WORKFLOW": workflow,
+            "FAILED_CONCLUSION": conclusion,
+            "FAILED_RUN_ID": "123",
+            "FAILED_SHA": "abc123",
+            "FAILED_WORKFLOW": workflow,
         }
         result = subprocess.run(
             [str(SCRIPT)], env=env, capture_output=True, text=True, check=False
@@ -154,3 +155,38 @@ def test_a_failed_lookup_opens_nothing_and_fails_loudly(tracker):
 def test_a_failed_report_names_the_run_in_the_log(tracker):
     tracker.state["fail"] = ["/issues?"]
     assert RUN_URL in tracker.run().stdout
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "timed_out", "startup_failure"])
+def test_any_other_conclusion_is_reported_without_counting_jobs(tracker, conclusion):
+    assert tracker.run(conclusion=conclusion).returncode == 0
+    assert len(tracker.open_issues) == 1
+    assert not any("/jobs" in " ".join(c) for c in tracker.state["calls"])
+
+
+def test_a_timeout_concludes_cancelled_and_is_reported(tracker):
+    tracker.state["jobs"] = 1
+    assert tracker.run(conclusion="cancelled").returncode == 0
+    assert len(tracker.open_issues) == 1
+
+
+def test_a_run_dropped_from_the_queue_reports_nothing(tracker):
+    tracker.state["jobs"] = 0
+    result = tracker.run(conclusion="cancelled")
+    assert result.returncode == 0
+    assert tracker.open_issues == []
+    assert "::error::" not in result.stdout
+
+
+def test_a_failed_job_count_still_reports_a_cancelled_run(tracker):
+    tracker.state["jobs"] = 0
+    tracker.state["fail"] = ["/jobs"]
+    assert tracker.run(conclusion="cancelled").returncode == 0
+    assert len(tracker.open_issues) == 1
+
+
+def test_the_report_names_the_run_that_failed_not_the_tracker(tracker):
+    tracker.run("release")
+    body = tracker.open_issues[0]["body"]
+    assert "abc123" in body
+    assert RUN_URL in body

@@ -18,6 +18,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release-bot
     permissions: {}
     outputs:
       created: ${{ steps.release.outputs.release_created }}
@@ -42,19 +43,68 @@ jobs:
           manifest-file: .release-please-manifest.json
           skip-github-release: ${{ vars.PUBLISH_ENABLED != 'true' }}
 
-  auto-merge:
-    name: auto-merge
+  decide:
+    name: decide
     needs: release-please
     if: vars.PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      decision: ${{ steps.decide.outputs.decision }}
+      number: ${{ steps.decide.outputs.number }}
+      sha: ${{ steps.decide.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Decide whether the release PR can merge
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:release-please--branches--main&state=open" \
+            --jq '.[0] // empty | {number, title, sha: .head.sha}')
+          if [ -z "$pr" ]; then
+            echo "no open release PR"
+            echo "decision=none" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          title=$(jq --raw-output .title <<<"$pr")
+          if scripts/release.py check "${title##* }" --manifest .release-please-manifest.json; then
+            decision=merge
+          else
+            decision=review
+          fi
+          {
+            echo "decision=$decision"
+            echo "number=$(jq --raw-output .number <<<"$pr")"
+            echo "sha=$(jq --raw-output .sha <<<"$pr")"
+          } >>"$GITHUB_OUTPUT"
+
+  auto-merge:
+    name: auto-merge
+    needs: decide
+    if: vars.PUBLISH_ENABLED == 'true' && needs.decide.outputs.decision != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-bot
+    permissions: {}
+    env:
+      DECISION: ${{ needs.decide.outputs.decision }}
+      HEAD_SHA: ${{ needs.decide.outputs.sha }}
+      NUMBER: ${{ needs.decide.outputs.number }}
+    steps:
+      - name: Check the decision
+        run: |
+          if [[ ! "$DECISION" =~ ^(merge|review)$ || ! "$NUMBER" =~ ^[1-9][0-9]*$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "refusing the decision" >&2
+            exit 1
+          fi
 
       - name: Create app token
         id: token
@@ -65,23 +115,25 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Merge the release PR or ask for review
+      - name: Merge the release PR
+        if: needs.decide.outputs.decision == 'merge'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$HEAD_SHA"
+
+      - name: Hold the PR for review
+        if: needs.decide.outputs.decision == 'review'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:release-please--branches--main&state=open" \
-            --jq '.[0] // empty | {number, title}')
-          if [ -z "$pr" ]; then
-            echo "no open release PR"
-            exit 0
+          armed=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          # GitHub only disarms a PR when someone without write access pushes, and the app has write access
+          if [ "$armed" = true ]; then
+            gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --disable-auto
           fi
-          number=$(jq --raw-output .number <<<"$pr")
-          title=$(jq --raw-output .title <<<"$pr")
-          if scripts/release.py check "${title##* }" --manifest .release-please-manifest.json; then
-            gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --auto --squash
-          else
-            scripts/hold-for-review.sh "$number"
-          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/requested_reviewers" \
+            --field 'reviewers[]=avargaskun' >/dev/null
 
   publish:
     name: publish
@@ -93,30 +145,3 @@ jobs:
     uses: ./.github/workflows/publish.yaml
     with:
       tag: ${{ needs.release-please.outputs.tag }}
-
-  track-failure:
-    name: track-failure
-    needs:
-      - release-please
-      - auto-merge
-      - publish
-    # failure() alone misses a timeout, which reports as cancelled
-    if: always() && github.ref == 'refs/heads/main' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    concurrency:
-      group: track-failure
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Report on the tracking issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/track-failure.sh

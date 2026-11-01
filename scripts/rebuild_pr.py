@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Applies a new image.lock to the one rebuild PR, following the release design's table."""
+"""Plans what a new image.lock means for the one rebuild PR, following the release design's table."""
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -13,26 +14,18 @@ from image_lock import LOCK_NAME, decide
 from release import ReleaseError, parse_version
 
 BRANCH = "rebuild/image-lock"
-BODY = "Automated rebuild. The diff of `image.lock` shows what changed in the image."
-CLOSING_NOTE = "The rebuilt image matches the committed `image.lock` again."
 RAW = "Accept: application/vnd.github.raw+json"
 ASSET = "Accept: application/octet-stream"
-HOLD = Path(__file__).with_name("hold-for-review.sh")
 STUCK_AFTER = timedelta(days=1)
+FLAGS = ("arm", "branch-exists", "commit", "disarm", "retitle", "stuck")
 
 
 class GitHubError(Exception):
     pass
 
 
-def gh(*args: str, payload: dict | None = None) -> str:
-    result = subprocess.run(
-        ["gh", *args],
-        input=None if payload is None else json.dumps(payload),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def gh(*args: str) -> str:
+    result = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise GitHubError(f"gh {' '.join(args)}: {result.stderr.strip()}")
     return result.stdout
@@ -40,12 +33,6 @@ def gh(*args: str, payload: dict | None = None) -> str:
 
 def read(path: str, *options: str):
     return json.loads(gh("api", *options, path))
-
-
-def write(method: str, path: str, payload: dict):
-    return json.loads(
-        gh("api", "--method", method, path, "--input", "-", payload=payload)
-    )
 
 
 def read_lock(repo: str, ref: str) -> str:
@@ -87,115 +74,67 @@ def is_stuck(pull: dict) -> bool:
     return datetime.now(UTC) - latest > STUCK_AFTER
 
 
-def commit_lock(repo: str, base: str, lock: str, message: str) -> str:
-    base_tree = read(f"repos/{repo}/git/commits/{base}")["tree"]["sha"]
-    entry = {"path": LOCK_NAME, "mode": "100644", "type": "blob", "content": lock}
-    tree = write(
-        "POST", f"repos/{repo}/git/trees", {"base_tree": base_tree, "tree": [entry]}
-    )
-    commit = write(
-        "POST",
-        f"repos/{repo}/git/commits",
-        {"message": message, "tree": tree["sha"], "parents": [base]},
-    )
-    return commit["sha"]
-
-
-def point_branch(repo: str, commit: str) -> None:
+def branch_exists(repo: str) -> bool:
     ref = f"refs/heads/{BRANCH}"
     existing = read(f"repos/{repo}/git/matching-refs/heads/{BRANCH}")
-    if any(entry["ref"] == ref for entry in existing):
-        write(
-            "PATCH",
-            f"repos/{repo}/git/{ref}",
-            {"sha": commit, "force": True},
-        )
-    else:
-        write("POST", f"repos/{repo}/git/refs", {"ref": ref, "sha": commit})
+    return any(entry["ref"] == ref for entry in existing)
 
 
-def hold(number: int) -> None:
-    result = subprocess.run([HOLD, str(number)], check=False)
-    if result.returncode != 0:
-        raise GitHubError(f"couldn't hold #{number} for review")
-
-
-def set_auto_merge(repo: str, number: int, title: str) -> None:
-    gh(
-        "pr",
-        "merge",
-        str(number),
-        "--repo",
-        repo,
-        "--auto",
-        "--squash",
-        "--subject",
-        title,
-        "--body",
-        BODY,
-    )
-
-
-def disarm(repo: str, number: int) -> None:
-    gh("pr", "merge", str(number), "--repo", repo, "--disable-auto")
-
-
-def close(repo: str, number: int) -> None:
-    gh(
-        "pr",
-        "close",
-        str(number),
-        "--repo",
-        repo,
-        "--delete-branch",
-        "--comment",
-        CLOSING_NOTE,
-    )
-
-
-def apply(repo: str, new: str, built: str) -> str:
+def plan(repo: str, new: str, built: str) -> dict:
     base = read(f"repos/{repo}/git/ref/heads/main")["object"]["sha"]
     if built != base:
-        return f"skipped: this run built {built}, and main is now {base}"
+        print(f"skipped: this run built {built}, and main is now {base}")
+        return {}
     title = decide(new, read_lock(repo, base), published_lock(repo))
     pull = open_pull(repo)
 
     if pull is not None and {f["path"] for f in pull["files"]} - {LOCK_NAME}:
         number = pull["number"]
-        hold(number)
-        if is_stuck(pull):
-            raise GitHubError(f"#{number} is held, which blocks the rebuild")
-        return f"held #{number}, which changes more than {LOCK_NAME}"
+        print(f"holding #{number}, which changes more than {LOCK_NAME}")
+        return {"operation": "hold", "number": number, "stuck": is_stuck(pull)}
     if title is None:
         if pull is None:
-            return "no change"
-        close(repo, pull["number"])
-        return f"closed #{pull['number']}"
+            print("no change")
+            return {}
+        print(f"closing #{pull['number']}")
+        return {"operation": "close", "number": pull["number"]}
 
     current = pull is not None and read_lock(repo, BRANCH) == new
-    if current and pull["title"] == title and is_stuck(pull):
+    retitle = pull is not None and pull["title"] != title
+    if current and not retitle and is_stuck(pull):
         raise GitHubError(f"#{pull['number']} hasn't merged since an earlier run")
 
     armed = pull["autoMergeRequest"] if pull is not None else None
-    if armed is not None and armed["commitHeadline"] != title:
-        disarm(repo, pull["number"])
-        armed = None
+    disarm = armed is not None and armed["commitHeadline"] != title
+    arm = armed is None or disarm
+    if current and not (retitle or disarm or arm):
+        print(f"#{pull['number']} is already armed")
+        return {}
+    fields = {
+        "operation": "propose",
+        "title": title,
+        "arm": arm,
+        "disarm": disarm,
+        "retitle": retitle,
+        "commit": not current,
+    }
+    if pull is not None:
+        fields["number"] = pull["number"]
     if not current:
-        point_branch(repo, commit_lock(repo, base, new, title))
-    if pull is None:
-        created = write(
-            "POST",
-            f"repos/{repo}/pulls",
-            {"head": BRANCH, "base": "main", "title": title, "body": BODY},
-        )
-        number = created["number"]
-    else:
-        number = pull["number"]
-        if pull["title"] != title:
-            write("PATCH", f"repos/{repo}/pulls/{number}", {"title": title})
-    if armed is None:
-        set_auto_merge(repo, number, title)
-    return f"#{number}: {title}"
+        encoded = base64.b64encode(new.encode()).decode()
+        fields |= {"base": base, "lock": encoded, "branch-exists": branch_exists(repo)}
+    print(f"{title}: {', '.join(k for k in FLAGS if fields.get(k)) or 'no writes'}")
+    return fields
+
+
+def as_output(value: object) -> str:
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def write_outputs(path: str, fields: dict) -> None:
+    outputs = {flag: False for flag in FLAGS} | {"operation": "none"} | fields
+    with open(path, "a") as output:
+        output.writelines(f"{k}={as_output(v)}\n" for k, v in outputs.items())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -204,10 +143,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         lock = Path(args.lock).read_text()
-        print(apply(os.environ["GITHUB_REPOSITORY"], lock, os.environ["GITHUB_SHA"]))
+        fields = plan(os.environ["GITHUB_REPOSITORY"], lock, os.environ["GITHUB_SHA"])
     except GitHubError as error:
         print(error, file=sys.stderr)
         return 1
+    write_outputs(os.environ["GITHUB_OUTPUT"], fields)
     return 0
 
 

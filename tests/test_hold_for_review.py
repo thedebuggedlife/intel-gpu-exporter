@@ -1,17 +1,28 @@
 import json
 import os
 import stat
-import subprocess
 
 import pytest
-from helpers import REPO, TESTS
+import yaml
+from helpers import REPO, TESTS, run_step
 
-SCRIPT = REPO / "scripts" / "hold-for-review.sh"
+WORKFLOWS = REPO / ".github" / "workflows"
 REPOSITORY = "thedebuggedlife/intel-gpu-exporter"
+ACT_JOBS = [
+    ("dependabot-merge.yaml", "act"),
+    ("rebuild.yaml", "update"),
+    ("release.yaml", "auto-merge"),
+]
 
 
-@pytest.fixture
-def hold(tmp_path):
+def hold_step(workflow, job):
+    steps = yaml.safe_load((WORKFLOWS / workflow).read_text())["jobs"][job]["steps"]
+    return next(s for s in steps if s["name"] == "Hold the PR for review")
+
+
+@pytest.fixture(params=ACT_JOBS, ids=lambda job: job[0])
+def hold(request, tmp_path):
+    step = hold_step(*request.param)
     shim = tmp_path / "bin" / "gh"
     shim.parent.mkdir()
     shim.write_text((TESTS / "fake_gh.py").read_text())
@@ -24,13 +35,21 @@ def hold(tmp_path):
             "PATH": f"{shim.parent}{os.pathsep}{os.environ['PATH']}",
             "FAKE_GH_STATE": str(state),
             "GITHUB_REPOSITORY": REPOSITORY,
+            "NUMBER": "42",
         }
-        result = subprocess.run(
-            [str(SCRIPT), "42"], env=env, capture_output=True, check=False
-        )
+        result = run_step(step, {"steps.token.outputs.token": "app-token"}, env)
         return result.returncode, json.loads(state.read_text())["calls"]
 
     return run
+
+
+def test_every_act_job_holds_a_pr_the_same_way():
+    assert len({hold_step(*job)["run"] for job in ACT_JOBS}) == 1
+
+
+@pytest.mark.parametrize("job", ACT_JOBS, ids=lambda job: job[0])
+def test_a_hold_uses_the_app_token(job):
+    assert hold_step(*job)["env"]["GH_TOKEN"] == "${{ steps.token.outputs.token }}"
 
 
 def disarms(call):

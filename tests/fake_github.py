@@ -5,6 +5,7 @@ FAKE_GITHUB_STATE holds the repository and a log of each argv. A "fail" entry fa
 command whose joined argv contains it.
 """
 
+import base64
 import json
 import os
 import subprocess
@@ -54,7 +55,11 @@ def listed_pulls(query):
         return [{"number": p["number"]} for p in state["pulls"]]
     _, branch = head.split(":", 1)
     return [
-        {"number": p["number"]}
+        {
+            "number": p["number"],
+            "title": p["title"],
+            "head": {"sha": p.get("sha")},
+        }
         for p in state["pulls"]
         if p["head"] == branch
         and not p["isCrossRepository"]
@@ -93,8 +98,12 @@ def api_get(route, query):
         return None
     if route == "pulls":
         return listed_pulls(query)
+    if route.startswith("pulls/"):
+        return state["pull_details"][route.split("/")[1]]
     if route == "issues":
         return listed_issues(query)
+    if route.startswith("actions/runs/") and route.endswith("/jobs"):
+        return {"total_count": state["jobs"], "jobs": []}
     if route == "releases":
         assert "--paginate" in argv and "--slurp" in argv
         return [state["releases"]]
@@ -110,6 +119,11 @@ def api_get(route, query):
 
 
 def api_write(method, route, payload):
+    if route == "git/blobs":
+        assert payload["encoding"] == "base64"
+        sha = next_sha()
+        state["blobs"][sha] = base64.b64decode(payload["content"]).decode()
+        return {"sha": sha}
     if route == "git/trees":
         assert payload["base_tree"].startswith("tree-of-")
         sha = next_sha()
@@ -119,7 +133,7 @@ def api_write(method, route, payload):
         sha = next_sha()
         tree = state["trees"][payload["tree"]]
         assert [e["path"] for e in tree["tree"]] == ["image.lock"]
-        state["locks"][sha] = tree["tree"][0]["content"]
+        state["locks"][sha] = state["blobs"][tree["tree"][0]["sha"]]
         state["commits"][sha] = payload
         return {"sha": sha}
     if route == "git/refs":
@@ -191,6 +205,15 @@ def pr():
     return None
 
 
+def run():
+    if argv[1] != "download" or option("--name") != "dependabot-decision":
+        refuse(f"unexpected run command {argv[1:]}")
+    directory = option("--dir")
+    os.makedirs(directory)
+    with open(f"{directory}/decision.json", "w") as f:
+        json.dump(state["decision"], f)
+
+
 def label():
     if argv[1] != "create":
         refuse(f"unexpected label command {argv[1]}")
@@ -223,7 +246,7 @@ joined = " ".join(argv)
 if any(text in joined for text in state["fail"]):
     refuse(f"HTTP 500 on {joined}")
 
-output = {"api": api, "pr": pr, "label": label, "issue": issue}[argv[0]]()
+output = {"api": api, "pr": pr, "label": label, "issue": issue, "run": run}[argv[0]]()
 save()
 if output is not None and "--jq" in argv:
     # gh's --jq is real jq, so the filters under test run for real here

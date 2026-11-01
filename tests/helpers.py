@@ -1,4 +1,6 @@
 import os
+import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -12,6 +14,8 @@ REPO = TESTS.parent
 FIXTURES = TESTS / "fixtures"
 DATA_JSON = TESTS / "data.json"
 WAIT_LIMIT = 10
+EXPRESSION = re.compile(r"\$\{\{\s*([^}]+?)\s*\}\}")
+COMPARISON = re.compile(r"([\w.\-]+) (==|!=) '([^']*)'")
 FAST_TIMING = {
     "timeout": 0.5,
     "backoff_initial": 0.02,
@@ -66,3 +70,58 @@ def pid_is_gone(pid):
     except ProcessLookupError:
         return True
     return False
+
+
+def expression_values(values, text):
+    return EXPRESSION.sub(lambda match: values.get(match[1], ""), str(text))
+
+
+def condition_holds(condition, values):
+    for clause in filter(None, condition.split(" && ")):
+        comparison = COMPARISON.fullmatch(clause.strip())
+        assert comparison, f"can't evaluate {clause!r}"
+        name, operator, expected = comparison.groups()
+        if (values.get(name, "") == expected) != (operator == "=="):
+            return False
+    return True
+
+
+def run_step(step, values, environment, cwd=REPO):
+    env = environment | {
+        name: expression_values(values, value)
+        for name, value in step.get("env", {}).items()
+    }
+    # A step with no shell runs under bash -e, and only shell: bash adds pipefail
+    flags = ["-eo", "pipefail"] if step.get("shell") == "bash" else ["-e"]
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", *flags, "-c", step["run"]],
+        env=env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def run_job(job, values, environment, cwd=REPO):
+    """Runs a job's run: steps as a runner would, skipping uses: and stopping on a failure."""
+    env = environment | {
+        name: expression_values(values, value)
+        for name, value in job.get("env", {}).items()
+    }
+    stdout, stderr, code = "", "", 0
+    for step in job["steps"]:
+        if "run" not in step or not condition_holds(step.get("if", ""), values):
+            continue
+        result = run_step(step, values, env, cwd)
+        stdout += result.stdout
+        stderr += result.stderr
+        code = result.returncode
+        if code != 0:
+            break
+    return subprocess.CompletedProcess(job["name"], code, stdout, stderr)
+
+
+def read_outputs(path):
+    lines = path.read_text().splitlines() if path.exists() else []
+    return dict(line.split("=", 1) for line in lines)

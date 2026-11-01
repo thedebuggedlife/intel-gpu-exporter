@@ -1,0 +1,69 @@
+name: dependabot-decide
+
+# pull_request_target runs main's copy, so a PR can't change what decides. This holds no key
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions: {}
+
+jobs:
+  # Alone in its job, so a third-party action can't touch the policy that reads its outputs
+  metadata:
+    name: metadata
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      dependency-names: ${{ steps.metadata.outputs.dependency-names }}
+      package-ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}
+      update-type: ${{ steps.metadata.outputs.update-type }}
+    steps:
+      - name: Read the update's metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+
+  decide:
+    name: decide
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      vulnerability-alerts: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPENDENCY: ${{ needs.metadata.outputs.dependency-names }}
+          ECOSYSTEM: ${{ needs.metadata.outputs.package-ecosystem }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          UPDATE_TYPE: ${{ needs.metadata.outputs.update-type }}
+        run: |
+          mkdir decision
+          scripts/dependabot_policy.py >decision/decision.json
+          cat decision/decision.json
+
+      - name: Upload the decision
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependabot-decision
+          path: decision/decision.json
+          if-no-files-found: error
+          retention-days: 1

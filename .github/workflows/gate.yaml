@@ -22,25 +22,18 @@ on:
         default: ""
     outputs:
       digest:
-        description: Index digest of the tested image
-        value: ${{ jobs.gate.outputs.digest }}
+        description: Index digest of the image, read in the job that built it
+        value: ${{ jobs.gate-build.outputs.digest }}
 
 permissions: {}
 
 jobs:
-  gate:
-    name: gate
+  gate-tests:
+    name: gate-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
-    outputs:
-      digest: ${{ steps.identity.outputs.digest }}
-    services:
-      registry:
-        image: registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 # 2
-        ports:
-          - 5000:5000
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +43,24 @@ jobs:
 
       - name: Lint and test
         uses: ./.github/actions/lint-and-test
+
+  # This job's file is what gets pushed, so nothing here installs packages or restores a cache
+  gate-build:
+    name: gate-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      config: ${{ steps.identity.outputs.config }}
+      digest: ${{ steps.identity.outputs.digest }}
+      revision: ${{ steps.metadata.outputs.revision }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
 
       - name: Read image metadata
         id: metadata
@@ -81,21 +92,65 @@ jobs:
             type=provenance,mode=max
             type=sbom,generator=docker.io/docker/buildkit-syft-scanner:1.12.1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315
 
-      - name: Load the archive into Docker
+      - name: Read the image's identity
         id: identity
         run: |
-          config="sha256:$(skopeo inspect --raw --config oci-archive:image.tar | sha256sum | cut -d' ' -f1)"
-          index="sha256:$(skopeo inspect --raw oci-archive:image.tar | sha256sum | cut -d' ' -f1)"
-          skopeo copy oci-archive:image.tar docker-archive:loadable.tar:intel-gpu-exporter:gate
+          echo "config=sha256:$(skopeo inspect --raw --config oci-archive:image.tar | sha256sum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+          echo "digest=sha256:$(skopeo inspect --raw oci-archive:image.tar | sha256sum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+
+      - name: Upload the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: image.tar
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+          compression-level: 0
+
+  gate-verify:
+    name: gate-verify
+    needs: gate-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CONFIG_DIGEST: ${{ needs.gate-build.outputs.config }}
+      DIGEST: ${{ needs.gate-build.outputs.digest }}
+    services:
+      registry:
+        image: registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 # 2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate-build.outputs.revision }}
+          persist-credentials: false
+
+      - name: Download the image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: artifact
+
+      - name: Load the archive into Docker
+        run: |
+          index="sha256:$(skopeo inspect --raw oci-archive:artifact/image.tar | sha256sum | cut -d' ' -f1)"
+          if [ "$index" != "$DIGEST" ]; then
+            echo "downloaded $index, but the build produced $DIGEST" >&2
+            exit 1
+          fi
+          skopeo copy oci-archive:artifact/image.tar docker-archive:loadable.tar:intel-gpu-exporter:gate
           docker load --input loadable.tar
           rm loadable.tar
           loaded=$(docker image inspect --format '{{.Id}}' intel-gpu-exporter:gate)
-          if [ "$loaded" != "$config" ]; then
-            echo "loaded $loaded, but the archive's config is $config" >&2
+          if [ "$loaded" != "$CONFIG_DIGEST" ]; then
+            echo "loaded $loaded, but the archive's config is $CONFIG_DIGEST" >&2
             exit 1
           fi
-          echo "config=$config" >>"$GITHUB_OUTPUT"
-          echo "digest=$index" >>"$GITHUB_OUTPUT"
 
       - name: Test image
         run: scripts/test-image.sh intel-gpu-exporter:gate
@@ -116,9 +171,8 @@ jobs:
 
       - name: Scan image
         env:
-          CONFIG_DIGEST: ${{ steps.identity.outputs.config }}
           SCAN_FORCE_FAIL: ${{ vars.SCAN_FORCE_FAIL }}
-        run: scripts/scan-image.sh image.tar "$CONFIG_DIGEST" built/grype.sarif
+        run: scripts/scan-image.sh artifact/image.tar "$CONFIG_DIGEST" built/grype.sarif
 
       - name: Upload the scan results
         if: ${{ !cancelled() }}
@@ -131,22 +185,11 @@ jobs:
           retention-days: 1
 
       - name: Rehearse the push
-        env:
-          DIGEST: ${{ steps.identity.outputs.digest }}
         run: |
           scripts/release.py publish --repository localhost:5000/rehearsal \
-            --archive image.tar --tag v999.0.0 --expected-digest "$DIGEST"
+            --archive artifact/image.tar --tag v999.0.0 --expected-digest "$DIGEST"
           tags=$(skopeo list-tags --tls-verify=false docker://localhost:5000/rehearsal | jq --compact-output '.Tags | sort')
           if [ "$tags" != '["999.0","999.0.0","latest"]' ]; then
             echo "the registry holds $tags" >&2
             exit 1
           fi
-
-      - name: Upload the tested image
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: image
-          path: image.tar
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0

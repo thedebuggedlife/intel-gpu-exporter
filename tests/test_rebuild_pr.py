@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -8,11 +9,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from helpers import REPO, TESTS
+import yaml
+from helpers import REPO, TESTS, condition_holds, read_outputs, run_job
 
 from scripts.image_lock import CHORE_TITLE, FIX_TITLE
 
 SCRIPT = REPO / "scripts" / "rebuild_pr.py"
+WORKFLOW = REPO / ".github" / "workflows" / "rebuild.yaml"
+MAIN_SHA = "1" * 40
+LATER_SHA = "2" * 40
+HEAD_SHA = "3" * 40
 BRANCH = "rebuild/image-lock"
 REPOSITORY = "thedebuggedlife/intel-gpu-exporter"
 COMMITTED = "apk musl 1.0-r0\n"
@@ -29,13 +35,16 @@ class Repository:
         self.path = path
         self.bin_dir = bin_dir
         self.lock_file = path.with_name("new.lock")
+        self.outputs = path.with_name("outputs")
         self.state = {
             "calls": [],
             "fail": [],
+            "repository": REPOSITORY,
             "next": 0,
             "next_pull": 50,
-            "refs": {"main": "main-sha"},
-            "locks": {"main-sha": COMMITTED},
+            "refs": {"main": MAIN_SHA},
+            "locks": {MAIN_SHA: COMMITTED},
+            "blobs": {},
             "trees": {},
             "commits": {},
             "pulls": [],
@@ -70,14 +79,13 @@ class Repository:
                 "autoMergeRequest": None,
                 "files": [{"path": "image.lock"}],
                 "commits": [{"committedDate": datetime.now(UTC).isoformat()}],
+                "headRefOid": HEAD_SHA,
             }
             | fields
         )
 
-    def run(self, lock=NEW, built=None):
-        self.lock_file.write_text(lock)
-        self.path.write_text(json.dumps(self.state))
-        env = os.environ | {
+    def environment(self):
+        return os.environ | {
             "PATH": os.pathsep.join(
                 [
                     str(self.bin_dir),
@@ -87,17 +95,48 @@ class Repository:
             ),
             "FAKE_GITHUB_STATE": str(self.path),
             "GITHUB_REPOSITORY": REPOSITORY,
-            "GITHUB_SHA": built or self.state["refs"]["main"],
+            "GITHUB_OUTPUT": str(self.outputs),
         }
+
+    def plan(self, lock=NEW, built=None):
+        self.lock_file.write_text(lock)
+        self.outputs.unlink(missing_ok=True)
+        self.path.write_text(json.dumps(self.state))
         result = subprocess.run(
             [str(SCRIPT), "--lock", str(self.lock_file)],
-            env=env,
+            env=self.environment()
+            | {"GITHUB_SHA": built or self.state["refs"]["main"]},
             capture_output=True,
             text=True,
             check=False,
         )
         self.state = json.loads(self.path.read_text())
         return result
+
+    def act(self, outputs):
+        values = {f"needs.plan.outputs.{k}": v for k, v in outputs.items()}
+        values |= {
+            "github.ref": "refs/heads/main",
+            "steps.token.outputs.token": "app-token",
+        }
+        job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["update"]
+        if not condition_holds(job["if"], values):
+            return None
+        self.path.write_text(json.dumps(self.state))
+        built = self.state["refs"]["main"]
+        result = run_job(job, values, self.environment() | {"GITHUB_SHA": built})
+        self.state = json.loads(self.path.read_text())
+        return result
+
+    def run(self, lock=NEW, built=None):
+        planned = self.plan(lock, built)
+        if planned.returncode != 0:
+            return planned
+        acted = self.act(read_outputs(self.outputs))
+        if acted is None:
+            return planned
+        acted.stdout = planned.stdout + acted.stdout
+        return acted
 
     @property
     def open_pulls(self):
@@ -191,9 +230,9 @@ def test_new_pr_changes_only_the_lock_on_top_of_main(repository):
     repository.run(NEW)
     assert repository.branch_lock == NEW
     commit = repository.state["commits"][repository.state["refs"][BRANCH]]
-    assert commit["parents"] == ["main-sha"]
+    assert commit["parents"] == [MAIN_SHA]
     tree = repository.state["trees"][commit["tree"]]
-    assert tree["base_tree"] == "tree-of-main-sha"
+    assert tree["base_tree"] == f"tree-of-{MAIN_SHA}"
 
 
 def test_new_pr_arms_auto_merge_with_a_fixed_message(repository):
@@ -234,11 +273,11 @@ def test_new_change_updates_the_open_pr(repository):
 
 def test_update_starts_again_from_current_main(repository):
     repository.run(NEW)
-    repository.state["refs"]["main"] = "later-sha"
-    repository.state["locks"]["later-sha"] = COMMITTED
+    repository.state["refs"]["main"] = LATER_SHA
+    repository.state["locks"][LATER_SHA] = COMMITTED
     repository.run(NEWER)
     commit = repository.state["commits"][repository.state["refs"][BRANCH]]
-    assert commit["parents"] == ["later-sha"]
+    assert commit["parents"] == [LATER_SHA]
 
 
 def test_armed_pr_with_the_right_subject_is_left_armed(repository):
@@ -397,3 +436,150 @@ def test_a_failed_hold_fails_the_run(repository):
     repository.pull(files=[{"path": "Dockerfile"}])
     repository.state["fail"] = ["requested_reviewers"]
     assert repository.run(NEW).returncode != 0
+
+
+def plan_is_only_reads(repository):
+    return not any(
+        call[0] == "pr" and call[1] != "view" or "--method" in call
+        for call in repository.state["calls"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("arrange", "lock", "operation"),
+    [
+        (lambda r: None, NEW, "propose"),
+        (lambda r: r.pull(), NEWER, "propose"),
+        (lambda r: r.pull(), COMMITTED, "close"),
+        (lambda r: r.pull(files=[{"path": "Dockerfile"}]), NEW, "hold"),
+        (lambda r: None, COMMITTED, "none"),
+    ],
+)
+def test_the_plan_writes_nothing_whatever_it_decides(
+    repository, arrange, lock, operation
+):
+    arrange(repository)
+    assert repository.plan(lock).returncode == 0
+    assert read_outputs(repository.outputs)["operation"] == operation
+    assert plan_is_only_reads(repository)
+
+
+def test_the_plan_carries_the_exact_bytes_of_the_lock(repository):
+    repository.plan(NEW)
+    encoded = read_outputs(repository.outputs)["lock"]
+    assert base64.b64decode(encoded).decode() == NEW
+    assert "\n" not in encoded
+
+
+def test_a_plan_with_nothing_to_do_skips_the_job_that_holds_the_key(repository):
+    repository.pull(autoMergeRequest={"commitHeadline": FIX_TITLE})
+    repository.plan(NEW)
+    assert repository.act(read_outputs(repository.outputs)) is None
+
+
+GOOD_PLAN = {
+    "operation": "propose",
+    "title": FIX_TITLE,
+    "number": "",
+    "base": MAIN_SHA,
+    "lock": "YXBrCg==",
+    "arm": "true",
+    "disarm": "false",
+    "retitle": "false",
+    "commit": "true",
+    "branch-exists": "false",
+    "head": "",
+    "stuck": "false",
+}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"operation": "publish"},
+        {"operation": ""},
+        {"operation": "hold", "number": ""},
+        {"operation": "close", "number": "7; gh repo delete"},
+        {"number": "0"},
+        {"number": "7 "},
+        {"title": "feat!: anything"},
+        {"title": f"{FIX_TITLE}\nRelease-As: 9.0.0"},
+        {"base": "main"},
+        {"base": "a" * 39},
+        {"base": LATER_SHA},
+        {"commit": "false", "head": ""},
+        {"commit": "false", "head": "main"},
+        {"lock": "not base64!"},
+        {"lock": ""},
+        {"arm": "yes"},
+        {"disarm": ""},
+        {"retitle": "1"},
+        {"commit": "$(id)"},
+        {"branch-exists": "maybe"},
+        {"stuck": "TRUE"},
+    ],
+    ids=str,
+)
+def test_the_job_holding_the_key_refuses_a_bad_plan(repository, change):
+    repository.path.write_text(json.dumps(repository.state))
+    result = repository.act(GOOD_PLAN | change)
+    assert result is not None
+    assert result.returncode != 0
+    assert "refusing the plan" in result.stderr
+    assert list(repository.writes()) == []
+
+
+def test_a_good_plan_passes_the_check(repository):
+    assert repository.act(GOOD_PLAN).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["hold", "close", "propose"],
+)
+def test_the_key_never_touches_a_pr_that_isnt_the_rebuild_pr(repository, operation):
+    repository.pull(number=66, head="someone-elses-branch")
+    plan = GOOD_PLAN | {
+        "operation": operation,
+        "number": "66",
+        "commit": "false",
+        "head": HEAD_SHA,
+    }
+    result = repository.act(plan)
+    assert result.returncode != 0
+    assert "refusing #66" in result.stderr
+    assert list(repository.writes()) == []
+
+
+def test_the_key_never_touches_a_fork_pr_on_the_same_branch_name(repository):
+    repository.pull(number=66, isCrossRepository=True)
+    plan = GOOD_PLAN | {"number": "66", "commit": "false", "head": HEAD_SHA}
+    assert repository.act(plan).returncode != 0
+    assert list(repository.writes()) == []
+
+
+def arm_call(repository):
+    return next(c for c in repository.state["calls"] if "--auto" in c)
+
+
+def test_arming_is_tied_to_the_new_commit(repository):
+    repository.run(NEW)
+    call = arm_call(repository)
+    binding = call[call.index("--match-head-commit") + 1]
+    assert binding == repository.state["refs"][BRANCH]
+
+
+def test_arming_an_unchanged_pr_is_tied_to_the_head_that_was_checked(repository):
+    repository.pull()
+    repository.run(NEW)
+    call = arm_call(repository)
+    assert call[call.index("--match-head-commit") + 1] == HEAD_SHA
+
+
+def test_a_new_commit_on_an_armed_pr_is_armed_from_nothing(repository):
+    repository.pull(autoMergeRequest={"commitHeadline": FIX_TITLE})
+    assert repository.run(NEWER).returncode == 0
+    writes = list(repository.writes())
+    assert "--disable-auto" in writes[0]
+    assert "--auto" in writes[-1]
+    assert "--match-head-commit" in writes[-1]

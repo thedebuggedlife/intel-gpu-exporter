@@ -1,0 +1,125 @@
+name: dependabot-merge
+
+on:
+  workflow_run:
+    workflows:
+      - dependabot-decide
+    types:
+      - completed
+
+permissions: {}
+
+jobs:
+  verify:
+    name: verify
+    # A fork's pull_request run can share the workflow's name, but only main's copy has this event
+    if: >-
+      github.event.workflow_run.event == 'pull_request_target'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.path == '.github/workflows/dependabot-decide.yaml'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      pull-requests: read
+    outputs:
+      decision: ${{ steps.verify.outputs.decision }}
+      number: ${{ steps.verify.outputs.number }}
+      sha: ${{ steps.verify.outputs.sha }}
+      title: ${{ steps.verify.outputs.title }}
+    steps:
+      - name: Read the decision and check it still applies
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name dependabot-decision --dir decision
+          decision=$(jq --raw-output .decision decision/decision.json)
+          number=$(jq --raw-output .number decision/decision.json)
+          sha=$(jq --raw-output .sha decision/decision.json)
+          title=$(jq --raw-output .title decision/decision.json)
+          if [[ ! "$decision" =~ ^(merge|review)$ || ! "$number" =~ ^[1-9][0-9]*$ || ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "refusing a malformed decision" >&2
+            exit 1
+          fi
+          subject='^(chore|fix)\(deps\): '
+          if [[ "$title" == *$'\n'* ]] || [[ "$decision" = merge && ! "$title" =~ $subject ]]; then
+            echo "refusing the subject of #$number" >&2
+            exit 1
+          fi
+          current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" \
+            --jq '[.user.login, .base.ref, .head.repo.full_name, .head.sha, .state] | join(" ")')
+          if [ "$current" != "dependabot[bot] main $GITHUB_REPOSITORY $sha open" ]; then
+            echo "#$number isn't the PR that was decided any more, so a newer run covers it"
+            decision=none
+          fi
+          {
+            echo "decision=$decision"
+            echo "number=$number"
+            echo "sha=$sha"
+            echo "title=$title"
+          } >>"$GITHUB_OUTPUT"
+
+  act:
+    name: act
+    needs: verify
+    if: needs.verify.outputs.decision != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-bot
+    permissions: {}
+    env:
+      DECISION: ${{ needs.verify.outputs.decision }}
+      HEAD_SHA: ${{ needs.verify.outputs.sha }}
+      NUMBER: ${{ needs.verify.outputs.number }}
+      PR_TITLE: ${{ needs.verify.outputs.title }}
+    steps:
+      - name: Check the decision
+        run: |
+          if [[ ! "$DECISION" =~ ^(merge|review)$ || ! "$NUMBER" =~ ^[1-9][0-9]*$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "refusing the decision" >&2
+            exit 1
+          fi
+          subject='^(chore|fix)\(deps\): '
+          if [[ "$DECISION" = merge && ! "$PR_TITLE" =~ $subject ]]; then
+            echo "refusing the subject" >&2
+            exit 1
+          fi
+
+      - name: Create app token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Merge the update
+        if: needs.verify.outputs.decision == 'merge'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          armed=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          # Arming again may keep an earlier commit's binding, so an armed PR starts from nothing
+          if [ "$armed" = true ]; then
+            gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --disable-auto
+          fi
+          gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$HEAD_SHA" \
+            --subject "$PR_TITLE" --body "Automated dependency update."
+
+      - name: Hold the PR for review
+        if: needs.verify.outputs.decision == 'review'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          armed=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          # GitHub only disarms a PR when someone without write access pushes, and the app has write access
+          if [ "$armed" = true ]; then
+            gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --disable-auto
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/requested_reviewers" \
+            --field 'reviewers[]=avargaskun' >/dev/null

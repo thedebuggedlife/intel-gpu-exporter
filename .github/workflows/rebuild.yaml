@@ -18,42 +18,28 @@ jobs:
       contents: read
     uses: ./.github/workflows/gate.yaml
 
-  sarif:
-    name: sarif
-    needs: gate
-    if: always() && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Download the scan results
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: sarif
-          path: scan
-
-      - name: Upload to code scanning
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
-        with:
-          sarif_file: scan/grype.sarif
-          category: grype
-
-  update:
-    name: update
+  plan:
+    name: plan
     needs: gate
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      arm: ${{ steps.plan.outputs.arm }}
+      base: ${{ steps.plan.outputs.base }}
+      branch-exists: ${{ steps.plan.outputs.branch-exists }}
+      commit: ${{ steps.plan.outputs.commit }}
+      disarm: ${{ steps.plan.outputs.disarm }}
+      head: ${{ steps.plan.outputs.head }}
+      lock: ${{ steps.plan.outputs.lock }}
+      number: ${{ steps.plan.outputs.number }}
+      operation: ${{ steps.plan.outputs.operation }}
+      retitle: ${{ steps.plan.outputs.retitle }}
+      stuck: ${{ steps.plan.outputs.stuck }}
+      title: ${{ steps.plan.outputs.title }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +52,66 @@ jobs:
           name: image-lock
           path: built
 
+      - name: Plan the rebuild PR
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/rebuild_pr.py --lock built/image.lock
+
+  update:
+    name: update
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.operation != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-bot
+    permissions: {}
+    env:
+      ARM: ${{ needs.plan.outputs.arm }}
+      BASE: ${{ needs.plan.outputs.base }}
+      BODY: Automated rebuild. The diff of `image.lock` shows what changed in the image.
+      BRANCH: rebuild/image-lock
+      BRANCH_EXISTS: ${{ needs.plan.outputs.branch-exists }}
+      CLOSING_NOTE: The rebuilt image matches the committed `image.lock` again.
+      COMMIT: ${{ needs.plan.outputs.commit }}
+      DISARM: ${{ needs.plan.outputs.disarm }}
+      HEAD: ${{ needs.plan.outputs.head }}
+      LOCK: ${{ needs.plan.outputs.lock }}
+      NUMBER: ${{ needs.plan.outputs.number }}
+      OPERATION: ${{ needs.plan.outputs.operation }}
+      RETITLE: ${{ needs.plan.outputs.retitle }}
+      STUCK: ${{ needs.plan.outputs.stuck }}
+      TITLE: ${{ needs.plan.outputs.title }}
+    steps:
+      - name: Check the plan
+        run: |
+          refuse() {
+            echo "refusing the plan: $1" >&2
+            exit 1
+          }
+          for flag in "$ARM" "$BRANCH_EXISTS" "$COMMIT" "$DISARM" "$RETITLE" "$STUCK"; do
+            [[ "$flag" =~ ^(true|false)$ ]] || refuse "a flag isn't true or false"
+          done
+          case "$OPERATION" in
+            hold | close)
+              [[ "$NUMBER" =~ ^[1-9][0-9]*$ ]] || refuse "no PR number"
+              ;;
+            propose)
+              [[ "$NUMBER" =~ ^([1-9][0-9]*)?$ ]] || refuse "a malformed PR number"
+              [[ "$TITLE" = "chore(deps): record image contents" || "$TITLE" = "fix(deps): update image packages" ]] ||
+                refuse "an unknown title"
+              if [ "$COMMIT" = true ]; then
+                [ "$BASE" = "$GITHUB_SHA" ] || refuse "a base other than the commit this run built"
+                [[ "$LOCK" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || refuse "a malformed lock"
+              elif [ "$ARM" = true ]; then
+                [[ "$HEAD" =~ ^[0-9a-f]{40}$ ]] || refuse "no head commit to arm"
+              fi
+              ;;
+            *)
+              refuse "an unknown operation"
+              ;;
+          esac
+
       - name: Create app token
         id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -75,33 +121,85 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Open, update or close the rebuild PR
+      - name: Check the PR
+        if: needs.plan.outputs.number != ''
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-        run: scripts/rebuild_pr.py --lock built/image.lock
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER" \
+            --jq '[.head.ref, .head.repo.full_name, .base.ref, .state] | join(" ")')
+          if [ "$current" != "$BRANCH $GITHUB_REPOSITORY main open" ]; then
+            echo "refusing #$NUMBER, which reads $current" >&2
+            exit 1
+          fi
 
-  track-failure:
-    name: track-failure
-    needs:
-      - gate
-      - update
-    # failure() alone misses a timeout, which reports as cancelled
-    if: always() && github.ref == 'refs/heads/main' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    concurrency:
-      group: track-failure
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Report on the tracking issue
+      - name: Hold the PR for review
+        if: needs.plan.outputs.operation == 'hold'
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/track-failure.sh
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          armed=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          # GitHub only disarms a PR when someone without write access pushes, and the app has write access
+          if [ "$armed" = true ]; then
+            gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --disable-auto
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/requested_reviewers" \
+            --field 'reviewers[]=avargaskun' >/dev/null
+
+      - name: Fail for a held PR that has waited
+        if: needs.plan.outputs.stuck == 'true'
+        run: |
+          echo "#$NUMBER is held, which blocks the rebuild" >&2
+          exit 1
+
+      - name: Close the stale PR
+        if: needs.plan.outputs.operation == 'close'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh pr close "$NUMBER" --repo "$GITHUB_REPOSITORY" --delete-branch --comment "$CLOSING_NOTE"
+
+      - name: Update the rebuild PR
+        if: needs.plan.outputs.operation == 'propose'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          repo=$GITHUB_REPOSITORY
+          number=$NUMBER
+          post() {
+            gh api --method "$1" "repos/$repo/$2" --input - --jq "$3"
+          }
+          if [ "$DISARM" = true ]; then
+            gh pr merge "$number" --repo "$repo" --disable-auto
+          fi
+          if [ "$COMMIT" = true ]; then
+            base_tree=$(gh api "repos/$repo/git/commits/$BASE" --jq .tree.sha)
+            blob=$(jq --null-input --arg lock "$LOCK" '{content: $lock, encoding: "base64"}' |
+              post POST git/blobs .sha)
+            tree=$(jq --null-input --arg base "$base_tree" --arg blob "$blob" \
+              '{base_tree: $base, tree: [{path: "image.lock", mode: "100644", type: "blob", sha: $blob}]}' |
+              post POST git/trees .sha)
+            commit=$(jq --null-input --arg message "$TITLE" --arg tree "$tree" --arg base "$BASE" \
+              '{message: $message, tree: $tree, parents: [$base]}' |
+              post POST git/commits .sha)
+            if [ "$BRANCH_EXISTS" = true ]; then
+              jq --null-input --arg sha "$commit" '{sha: $sha, force: true}' |
+                post PATCH "git/refs/heads/$BRANCH" .ref
+            else
+              jq --null-input --arg ref "refs/heads/$BRANCH" --arg sha "$commit" '{ref: $ref, sha: $sha}' |
+                post POST git/refs .ref
+            fi
+          fi
+          if [ -z "$number" ]; then
+            number=$(jq --null-input --arg head "$BRANCH" --arg title "$TITLE" --arg body "$BODY" \
+              '{head: $head, base: "main", title: $title, body: $body}' |
+              post POST pulls .number)
+          elif [ "$RETITLE" = true ]; then
+            jq --null-input --arg title "$TITLE" '{title: $title}' |
+              post PATCH "pulls/$number" .number
+          fi
+          if [ "$ARM" = true ]; then
+            gh pr merge "$number" --repo "$repo" --auto --squash --match-head-commit "${commit:-$HEAD}" \
+              --subject "$TITLE" --body "$BODY"
+          fi

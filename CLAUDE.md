@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` package, run with `python -m intel_gpu_exporter`: it runs `intel_gpu_top -J -p` as a supervised subprocess, parses the JSON stream from its stdout, and serves the latest sample as gauges on `LISTEN_PORT`, default 8080. `docs/specs/2026-10-30-exporter.md` is the design for the exporter, including work not done yet.
 
-`origin` is the `thedebuggedlife` fork. `upstream` (`onedr0p`) is marked unmaintained in the README, so don't expect changes to flow from there.
+`origin` is the `thedebuggedlife` fork. `upstream` (`onedr0p`) is archived, so don't expect changes to flow from there. It publishes no licence file, and that question stays open and is recorded in the README: don't add a licence file covering inherited code.
 
 ## Commands
 
@@ -14,7 +14,7 @@ A Prometheus exporter for Intel GPUs. The code is the `intel_gpu_exporter` packa
 
 Dev tools are pinned in `requirements-dev.txt`, apart from the runtime `requirements.txt`. Install the two files with separate `pip` commands and don't `-r` one from the other: `requirements.txt` is hash-locked, which would make pip reject the unhashed dev pins. It lists the wheel and sdist hashes by hand, with no `.in` file, in a format Dependabot's requirements updater supports. A new required dependency would need its own pin and hashes, and pip fails without them.
 
-`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `loaded.json` is the only one with clients, and its bytes must not change, because its framing is under test. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand and covers the configuration contract, so keep it independent of the code. `.dockerignore` denies everything, then allows `intel_gpu_exporter` and `requirements.txt`.
+`pyproject.toml` holds the `ruff` and `pytest` settings. `tests/fixtures/` holds captures of current `intel_gpu_top` output, and its README records where each one came from. `loaded.json` is the only one with clients, and its bytes must not change, because its framing is under test. `tests/data.json` is an older capture and the only one with `imc-bandwidth`. `tests/test_contract.py` lists every contract metric by hand and covers the configuration contract, so keep it independent of the code. `tests/test_docs.py` replays the captures and fails if the README misses a served metric, or if the README, `examples/prometheus.md` or the dashboard names one that isn't served. `.dockerignore` denies everything, then allows `intel_gpu_exporter` and `requirements.txt`.
 
 `intel_gpu_top` needs Linux and an Intel GPU, so tests replay captures or use `tests/fake_intel_gpu_top.py`, which stands in for it on `PATH` and plays a script per spawn. `tests/test_e2e.py` runs the real exporter as a subprocess, using `main(port=0, timing=...)` for an ephemeral port and short timeouts. Those arguments exist for tests and aren't configuration. Teardown kills the exporter's process group, so a test can't leave a child behind. Backoff sequences are asserted in `tests/test_supervisor.py` with no sleeping, because the fake's startup time varies too much to measure them end to end.
 
@@ -42,7 +42,7 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 ## Architecture
 
-**Metrics are built from the latest sample, not declared as gauges.** `SampleCollector` in `metrics.py` turns each sample into a new snapshot in `update()`, and `collect()` renders that snapshot on each scrape. Don't add module-level `Gauge`s: an unlabelled one exports 0 from the moment it is registered. Section metrics are listed in `SECTION_METRICS`, and engine metrics are derived from each `Name/N` key, so every instance is exported. Labelled series live beside the plain gauges in the snapshot. On multi-GT output, GT 0 fills the contract metrics and every GT also gets `igpu_gt_*{gt="N"}`. Labels only ever go on new names, because adding one to a contract metric would change its series. Adding or renaming a metric also means updating the README's Metrics section and `examples/simple-grafana-dash.json`, which references metrics by name. `igpu_gt_*` and `igpu_clients_count` are missing from both until the docs PR.
+**Metrics are built from the latest sample, not declared as gauges.** `SampleCollector` in `metrics.py` turns each sample into a new snapshot in `update()`, and `collect()` renders that snapshot on each scrape. Don't add module-level `Gauge`s: an unlabelled one exports 0 from the moment it is registered. Section metrics are listed in `SECTION_METRICS`, and engine metrics are derived from each `Name/N` key, so every instance is exported. Labelled series live beside the plain gauges in the snapshot. On multi-GT output, GT 0 fills the contract metrics and every GT also gets `igpu_gt_*{gt="N"}`. Labels only ever go on new names, because adding one to a contract metric would change its series. Adding or renaming a metric also means updating the README's Metrics section and `examples/simple-grafana-dash.json`, which references metrics by name. The dashboard's `Instance` variable reads `igpu_up`, which is served in every state, and its data source is a variable, so it holds no data source UID from any one Grafana.
 
 **Missing data is a gap, never a 0.** A value that isn't in the sample produces no series, and a real 0 stays 0. `igpu_clients_count{name}` reports 0 for a name seen earlier only if the sample has a `clients` section, because then the 0 is what the sample says. Unknown input logs one warning per distinct key and raises `igpu_parse_warnings_total`, which must stay at 0 on healthy hardware. So `power`, `imc-bandwidth` and `clients`, which some hardware legitimately omits, log at INFO instead. `update()` must not raise on sample content.
 
@@ -60,7 +60,7 @@ docker run --rm --privileged --pid=host -p 8080:8080 -v /dev/dri:/dev/dri intel-
 
 ## Configuration
 
-Set through environment variables, none of which are documented in the README. `config.py` reads them once at startup into a frozen dataclass. An invalid number prints one line and exits non-zero before the port is bound or the child is started.
+Set through environment variables, and the README's Configuration section repeats this table for users. `config.py` reads them once at startup into a frozen dataclass. An invalid number prints one line and exits non-zero before the port is bound or the child is started.
 
 | Variable | Effect |
 | --- | --- |
@@ -71,7 +71,7 @@ Set through environment variables, none of which are documented in the README. `
 
 ## Release
 
-`docs/specs/2026-10-31-release.md` is the design.
+`docs/specs/2026-10-31-release.md` is the design, and the README's Update policy describes the result for users, so a change to what merges or releases by itself means updating it. `SECURITY.md`'s reporting link needs GitHub's private vulnerability reporting, which is a repository setting.
 
 **The repository variable `PUBLISH_ENABLED` switches publishing on, and only the value `true` does, in any case.** While it's off, release-please only opens and updates its PR, with no tag or release, nothing auto-merges that PR, and nothing pushes. Dependabot auto-merge ignores the switch. The coordinator owns it.
 

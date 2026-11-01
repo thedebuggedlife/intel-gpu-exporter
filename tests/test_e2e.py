@@ -264,11 +264,12 @@ def test_stderr_is_drained_before_the_next_spawn(fake_gpu, start_exporter):
     fake_gpu.play([["stderr", "engine noise\n", lines], ["exit", 1]], STREAM)
     exporter = start_exporter({"timeout": 30, "join_grace": 30})
 
-    exporter.wait_for_restarts(1)
+    def log_before_the_second_spawn():
+        log = exporter.log()
+        spawns = [m.start() for m in re.finditer("Started", log)]
+        return log[: spawns[1]] if len(spawns) > 1 else None
 
-    log = exporter.log()
-    second_spawn = [m.start() for m in re.finditer("Started", log)][1]
-    assert log[:second_spawn].count("engine noise") == lines
+    assert wait_until(log_before_the_second_spawn).count("engine noise") == lines
 
 
 def test_heavy_stderr_is_logged_and_does_not_block_the_child(fake_gpu, start_exporter):

@@ -48,6 +48,22 @@ def pull(number):
     return next(p for p in state["pulls"] if p["number"] == int(number))
 
 
+def pull_details(number):
+    if number in state.get("pull_details", {}):
+        return state["pull_details"][number]
+    target = pull(number)
+    owner = "someone/fork" if target["isCrossRepository"] else state["repository"]
+    return {
+        "base": {"ref": "main"},
+        "head": {
+            "ref": target["head"],
+            "repo": {"full_name": owner},
+            "sha": target.get("sha"),
+        },
+        "state": target["state"],
+    }
+
+
 def listed_pulls(query):
     head = query.get("head", [""])[0]
     if ":" not in head:
@@ -98,8 +114,10 @@ def api_get(route, query):
         return None
     if route == "pulls":
         return listed_pulls(query)
+    if route.startswith("compare/"):
+        return {"status": state["compare"]}
     if route.startswith("pulls/"):
-        return state["pull_details"][route.split("/")[1]]
+        return pull_details(route.split("/")[1])
     if route == "issues":
         return listed_issues(query)
     if route.startswith("actions/runs/") and route.endswith("/jobs"):
@@ -166,6 +184,7 @@ def api_write(method, route, payload):
             "autoMergeRequest": None,
             "files": [{"path": "image.lock"}],
             "commits": [{"committedDate": datetime.now(UTC).isoformat()}],
+            "headRefOid": "4" * 40,
         }
         state["next_pull"] += 1
         state["pulls"].append(created)

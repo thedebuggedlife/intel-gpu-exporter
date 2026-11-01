@@ -134,15 +134,16 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: image
+          path: artifact
 
       - name: Load the archive into Docker
         run: |
-          index="sha256:$(skopeo inspect --raw oci-archive:image.tar | sha256sum | cut -d' ' -f1)"
+          index="sha256:$(skopeo inspect --raw oci-archive:artifact/image.tar | sha256sum | cut -d' ' -f1)"
           if [ "$index" != "$DIGEST" ]; then
             echo "downloaded $index, but the build produced $DIGEST" >&2
             exit 1
           fi
-          skopeo copy oci-archive:image.tar docker-archive:loadable.tar:intel-gpu-exporter:gate
+          skopeo copy oci-archive:artifact/image.tar docker-archive:loadable.tar:intel-gpu-exporter:gate
           docker load --input loadable.tar
           rm loadable.tar
           loaded=$(docker image inspect --format '{{.Id}}' intel-gpu-exporter:gate)
@@ -171,7 +172,7 @@ jobs:
       - name: Scan image
         env:
           SCAN_FORCE_FAIL: ${{ vars.SCAN_FORCE_FAIL }}
-        run: scripts/scan-image.sh image.tar "$CONFIG_DIGEST" built/grype.sarif
+        run: scripts/scan-image.sh artifact/image.tar "$CONFIG_DIGEST" built/grype.sarif
 
       - name: Upload the scan results
         if: ${{ !cancelled() }}
@@ -186,7 +187,7 @@ jobs:
       - name: Rehearse the push
         run: |
           scripts/release.py publish --repository localhost:5000/rehearsal \
-            --archive image.tar --tag v999.0.0 --expected-digest "$DIGEST"
+            --archive artifact/image.tar --tag v999.0.0 --expected-digest "$DIGEST"
           tags=$(skopeo list-tags --tls-verify=false docker://localhost:5000/rehearsal | jq --compact-output '.Tags | sort')
           if [ "$tags" != '["999.0","999.0.0","latest"]' ]; then
             echo "the registry holds $tags" >&2

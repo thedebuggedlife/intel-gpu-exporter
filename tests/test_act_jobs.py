@@ -28,8 +28,11 @@ class GitHub:
         self.state = {
             "calls": [],
             "fail": [],
+            "repository": REPOSITORY,
+            "compare": "behind",
             "decision": {"decision": "merge", "number": 42, "sha": SHA, "title": TITLE},
             "pull_details": {"42": self.dependabot_pull()},
+            "labels": [],
             "pulls": [self.listed_pull()],
             "review_requests": [],
         }
@@ -39,7 +42,11 @@ class GitHub:
         pull = {
             "user": {"login": "dependabot[bot]"},
             "base": {"ref": "main"},
-            "head": {"repo": {"full_name": REPOSITORY}, "sha": SHA},
+            "head": {
+                "ref": "release-please--branches--main",
+                "repo": {"full_name": REPOSITORY},
+                "sha": SHA,
+            },
             "state": "open",
         }
         return pull | changes
@@ -243,6 +250,13 @@ def test_release_decide_holds_a_title_it_cant_read(github):
     assert read_outputs(github.outputs)["decision"] == "review"
 
 
+@pytest.mark.parametrize("flag", ["-h", "--help", "--manifest"])
+def test_release_decide_doesnt_take_a_title_as_an_option(github, flag):
+    github.state["pulls"] = [github.listed_pull(f"chore(main): release {flag}")]
+    assert release_decide(github).returncode == 0
+    assert read_outputs(github.outputs)["decision"] == "review"
+
+
 def test_release_decide_finds_nothing_with_no_release_pr(github):
     github.state["pulls"] = []
     assert release_decide(github).returncode == 0
@@ -274,6 +288,54 @@ def test_release_act_is_tied_to_the_commit_that_was_decided(github):
     assert call[call.index("--match-head-commit") + 1] == SHA
 
 
+@pytest.mark.parametrize(
+    "act_on",
+    [
+        lambda g: g.run(job_of("dependabot-merge.yaml", "act"), act_values()),
+        release_act,
+    ],
+    ids=["dependabot", "release"],
+)
+def test_an_armed_pr_is_armed_from_nothing(github, act_on):
+    github.state["pulls"][0]["autoMergeRequest"] = {"commitHeadline": "old"}
+    assert act_on(github).returncode == 0
+    assert "--disable-auto" in github.merges[0]
+    assert "--match-head-commit" in github.merges[1]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"head": {"ref": "other", "repo": {"full_name": REPOSITORY}, "sha": SHA}},
+        {
+            "head": {
+                "ref": "release-please--branches--main",
+                "repo": {"full_name": "someone/fork"},
+                "sha": SHA,
+            }
+        },
+        {
+            "head": {
+                "ref": "release-please--branches--main",
+                "repo": {"full_name": REPOSITORY},
+                "sha": OTHER_SHA,
+            }
+        },
+        {"base": {"ref": "other"}},
+        {"state": "closed"},
+    ],
+    ids=str,
+)
+@pytest.mark.parametrize("decision", ["merge", "review"])
+def test_release_act_refuses_a_pr_that_isnt_the_release_pr(github, change, decision):
+    github.state["pull_details"]["42"] = github.dependabot_pull(**change)
+    result = release_act(github, decision=decision)
+    assert result.returncode != 0
+    assert "refusing #42" in result.stderr
+    assert github.merges == []
+    assert github.state["review_requests"] == []
+
+
 def test_release_act_holds_without_arming(github):
     assert release_act(github, decision="review").returncode == 0
     assert not any("--auto" in c for c in github.merges)
@@ -289,3 +351,39 @@ def test_release_act_refuses_a_bad_decision(github, change):
     result = release_act(github, **change)
     assert result.returncode != 0
     assert github.state["calls"] == []
+
+
+def check_tag(github, tag="v1.0.0"):
+    values = {"needs.release-please.outputs.tag": tag}
+    return github.run(job_of("release.yaml", "check-tag"), values)
+
+
+@pytest.mark.parametrize("status", ["behind", "identical"])
+def test_a_tag_on_main_passes(github, status):
+    github.state["compare"] = status
+    assert check_tag(github).returncode == 0
+
+
+@pytest.mark.parametrize("status", ["ahead", "diverged"])
+def test_a_tag_that_never_merged_is_refused(github, status):
+    github.state["compare"] = status
+    assert check_tag(github).returncode != 0
+
+
+@pytest.mark.parametrize(
+    "tag", ["1.0.0", "v1.0", "v1.0.0-beta", "latest", "v1.0.0\nx", "", "v1.0.0 x"]
+)
+def test_a_malformed_tag_is_refused(github, tag):
+    assert check_tag(github, tag).returncode != 0
+    assert github.state["calls"] == []
+
+
+def test_a_failed_comparison_is_refused(github):
+    github.state["fail"] = ["compare/"]
+    assert check_tag(github).returncode != 0
+
+
+def test_publish_cant_run_without_the_tag_check():
+    jobs = yaml.safe_load((WORKFLOWS / "release.yaml").read_text())["jobs"]
+    assert "check-tag" in jobs["publish"]["needs"]
+    assert jobs["check-tag"]["permissions"] == {"contents": "read"}

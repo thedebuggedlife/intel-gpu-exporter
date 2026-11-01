@@ -63,7 +63,7 @@ def open_pull(repo: str) -> dict | None:
     found = read(f"repos/{repo}/pulls?head={owner}:{BRANCH}&state=open")
     if not found:
         return None
-    fields = "number,title,autoMergeRequest,files,commits"
+    fields = "number,title,autoMergeRequest,files,commits,headRefOid"
     return json.loads(
         gh("pr", "view", str(found[0]["number"]), "--repo", repo, "--json", fields)
     )
@@ -105,7 +105,8 @@ def plan(repo: str, new: str, built: str) -> dict:
         raise GitHubError(f"#{pull['number']} hasn't merged since an earlier run")
 
     armed = pull["autoMergeRequest"] if pull is not None else None
-    disarm = armed is not None and armed["commitHeadline"] != title
+    # Arming binds a commit, so a new commit starts from nothing as a new subject does
+    disarm = armed is not None and (armed["commitHeadline"] != title or not current)
     arm = armed is None or disarm
     if current and not (retitle or disarm or arm):
         print(f"#{pull['number']} is already armed")
@@ -119,7 +120,7 @@ def plan(repo: str, new: str, built: str) -> dict:
         "commit": not current,
     }
     if pull is not None:
-        fields["number"] = pull["number"]
+        fields |= {"number": pull["number"], "head": pull["headRefOid"]}
     if not current:
         encoded = base64.b64encode(new.encode()).decode()
         fields |= {"base": base, "lock": encoded, "branch-exists": branch_exists(repo)}

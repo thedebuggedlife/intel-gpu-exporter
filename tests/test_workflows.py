@@ -121,6 +121,22 @@ def test_the_build_job_is_the_only_one_that_uploads_the_image():
     assert uploads == ["gate-build"]
 
 
+def test_no_artifact_can_land_on_the_checkout():
+    for path, name, job in all_jobs():
+        for step in steps_of(job):
+            if "download-artifact" in step.get("uses", ""):
+                directory = step["with"].get("path")
+                assert directory, (path, name, step["name"])
+                assert not (REPO / directory).exists(), (path, name, directory)
+
+
+def test_every_later_use_reads_the_downloaded_archive():
+    runs = [s.get("run", "") for s in gate_steps()]
+    publish_runs = [s.get("run", "") for s in publish_steps()]
+    for run in (*runs, *publish_runs):
+        assert not re.search(r"(?<![\w/])image\.tar", run), run
+
+
 def test_lint_and_test_runs_in_its_own_job():
     uses = [
         name
@@ -206,6 +222,7 @@ def test_contents_write_only_in_the_two_named_jobs():
     [
         ("publish.yaml", "push"),
         ("release.yaml", "publish"),
+        ("release.yaml", "check-tag"),
         ("release.yaml", "decide"),
         ("release.yaml", "auto-merge"),
         ("rebuild.yaml", "plan"),
@@ -252,7 +269,7 @@ def test_draft_is_published_only_after_the_push():
 def test_release_calls_publish_only_with_the_switch():
     job = load("release.yaml")["jobs"]["publish"]
     assert job["uses"] == "./.github/workflows/publish.yaml"
-    assert job["needs"] == "release-please"
+    assert job["needs"] == ["release-please", "check-tag"]
     assert "vars.PUBLISH_ENABLED == 'true'" in job["if"]
     assert "needs.release-please.outputs.created == 'true'" in job["if"]
     assert "||" not in job["if"]
@@ -272,7 +289,7 @@ def release_decide_run():
 
 def test_auto_merge_applies_the_guard_with_the_manifest():
     run = release_decide_run()
-    assert "--manifest .release-please-manifest.json" in run
+    assert '--manifest .release-please-manifest.json -- "${title##* }"' in run
     assert "gh pr merge" not in run
 
 
@@ -312,6 +329,7 @@ def test_no_workflow_sets_the_switch():
 
 DECIDE = "dependabot-decide.yaml"
 MERGE = "dependabot-merge.yaml"
+REBUILD_FILE = "rebuild.yaml"
 
 
 def decide_job(name):
@@ -421,16 +439,33 @@ def test_merge_verifies_with_read_only_permissions_and_no_checkout():
 
 
 @pytest.mark.parametrize(
-    ("workflow", "job", "name"),
+    ("workflow", "job", "name", "commit"),
     [
-        (MERGE, "act", "Merge the update"),
-        ("release.yaml", "auto-merge", "Merge the release PR"),
+        (MERGE, "act", "Merge the update", "$HEAD_SHA"),
+        ("release.yaml", "auto-merge", "Merge the release PR", "$HEAD_SHA"),
+        (REBUILD_FILE, "update", "Update the rebuild PR", "${commit:-$HEAD}"),
     ],
 )
-def test_a_merge_is_bound_to_the_commit_that_was_decided(workflow, job, name):
+def test_a_merge_is_bound_to_the_commit_that_was_decided(workflow, job, name, commit):
     step = next(s for s in load(workflow)["jobs"][job]["steps"] if s["name"] == name)
-    assert '--match-head-commit "$HEAD_SHA"' in step["run"]
+    assert f'--match-head-commit "{commit}"' in step["run"]
     assert "--auto --squash" in step["run"]
+
+
+@pytest.mark.parametrize(
+    ("job", "text"),
+    [
+        ("auto-merge", "release-please--branches--main $GITHUB_REPOSITORY main"),
+        ("update", "$BRANCH $GITHUB_REPOSITORY main open"),
+    ],
+)
+def test_the_pr_is_identified_before_anything_acts_on_it(job, text):
+    workflow = "release.yaml" if job == "auto-merge" else "rebuild.yaml"
+    steps = load(workflow)["jobs"][job]["steps"]
+    names = [s["name"] for s in steps]
+    check = names.index("Check the PR")
+    assert text in steps[check]["run"]
+    assert check == names.index("Create app token") + 1
 
 
 @pytest.mark.parametrize("path", workflow_paths(), ids=lambda p: p.name)
@@ -631,7 +666,7 @@ def test_rebuild_update_passes_on_the_plan_it_needs():
 
 
 REPORT = "report.yaml"
-WATCHED = {"dependabot-decide", "dependabot-merge", "rebuild", "release"}
+WATCHED = {"dependabot-decide", "dependabot-merge", "publish", "rebuild", "release"}
 
 
 def report_job(name):
@@ -659,7 +694,7 @@ def test_every_watched_name_is_a_real_workflow():
 
 def test_every_workflow_that_acts_or_publishes_is_watched():
     for path, name, job in all_jobs():
-        if environment_of(job) or "publish.yaml" in str(job.get("uses", "")):
+        if environment_of(job) or job.get("permissions", {}).get("packages"):
             assert yaml.safe_load((WORKFLOWS / path).read_text())["name"] in WATCHED
 
 
@@ -764,6 +799,7 @@ DECIDERS = {
     ("dependabot-decide.yaml", "metadata"),
     ("dependabot-merge.yaml", "verify"),
     ("rebuild.yaml", "plan"),
+    ("release.yaml", "check-tag"),
     ("release.yaml", "decide"),
 }
 FORBIDDEN_IN_ACT_JOBS = re.compile(
@@ -905,7 +941,7 @@ def test_a_job_checks_what_it_received_before_the_key_is_used():
         check = job["steps"][0]["run"]
         for variable, value in job["env"].items():
             if "needs." in str(value):
-                assert f"${variable}" in check or f'"${variable}"' in check, variable
+                assert f'"${variable}"' in check, variable
 
 
 def test_decisions_reach_a_job_with_the_key_through_env():

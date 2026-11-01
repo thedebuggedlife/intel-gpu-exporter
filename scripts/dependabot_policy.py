@@ -58,10 +58,11 @@ def changed_files(repo: str, number: str) -> list[str]:
 
 
 # REST, because the GraphQL equivalent returns no alerts rather than an error without access
-def open_alert(repo: str, dependency: str) -> str:
+def open_alert(repo: str, dependency: str, files: list[str]) -> str:
     if not dependency:
         return ""
-    path = f"repos/{repo}/dependabot/alerts?state=open&package={quote(dependency)}"
+    query = f"state=open&package={quote(dependency)}&manifest={quote(','.join(files))}"
+    path = f"repos/{repo}/dependabot/alerts?{query}"
     return api(path, "--jq", ".[0].security_advisory.ghsa_id // empty").strip()
 
 
@@ -69,15 +70,16 @@ def main() -> int:
     repo = os.environ["GITHUB_REPOSITORY"]
     number = os.environ["PR_NUMBER"]
     title = os.environ["PR_TITLE"]
+    files = changed_files(repo, number)
     print(
         json.dumps(
             {
                 "decision": decide(
                     title,
                     os.environ["ECOSYSTEM"],
-                    changed_files(repo, number),
+                    files,
                     os.environ.get("UPDATE_TYPE", ""),
-                    open_alert(repo, os.environ.get("DEPENDENCY", "")),
+                    open_alert(repo, os.environ.get("DEPENDENCY", ""), files),
                 ),
                 "number": int(number),
                 "sha": os.environ["HEAD_SHA"],

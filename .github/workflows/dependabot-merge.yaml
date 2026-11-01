@@ -101,6 +101,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
+          armed=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          # Arming again may keep an earlier commit's binding, so an armed PR starts from nothing
+          if [ "$armed" = true ]; then
+            gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --disable-auto
+          fi
           gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$HEAD_SHA" \
             --subject "$PR_TITLE" --body "Automated dependency update."
 

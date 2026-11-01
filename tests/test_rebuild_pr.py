@@ -18,6 +18,7 @@ SCRIPT = REPO / "scripts" / "rebuild_pr.py"
 WORKFLOW = REPO / ".github" / "workflows" / "rebuild.yaml"
 MAIN_SHA = "1" * 40
 LATER_SHA = "2" * 40
+HEAD_SHA = "3" * 40
 BRANCH = "rebuild/image-lock"
 REPOSITORY = "thedebuggedlife/intel-gpu-exporter"
 COMMITTED = "apk musl 1.0-r0\n"
@@ -38,6 +39,7 @@ class Repository:
         self.state = {
             "calls": [],
             "fail": [],
+            "repository": REPOSITORY,
             "next": 0,
             "next_pull": 50,
             "refs": {"main": MAIN_SHA},
@@ -77,6 +79,7 @@ class Repository:
                 "autoMergeRequest": None,
                 "files": [{"path": "image.lock"}],
                 "commits": [{"committedDate": datetime.now(UTC).isoformat()}],
+                "headRefOid": HEAD_SHA,
             }
             | fields
         )
@@ -120,7 +123,8 @@ class Repository:
         if not condition_holds(job["if"], values):
             return None
         self.path.write_text(json.dumps(self.state))
-        result = run_job(job, values, self.environment())
+        built = self.state["refs"]["main"]
+        result = run_job(job, values, self.environment() | {"GITHUB_SHA": built})
         self.state = json.loads(self.path.read_text())
         return result
 
@@ -484,6 +488,7 @@ GOOD_PLAN = {
     "retitle": "false",
     "commit": "true",
     "branch-exists": "false",
+    "head": "",
     "stuck": "false",
 }
 
@@ -501,6 +506,9 @@ GOOD_PLAN = {
         {"title": f"{FIX_TITLE}\nRelease-As: 9.0.0"},
         {"base": "main"},
         {"base": "a" * 39},
+        {"base": LATER_SHA},
+        {"commit": "false", "head": ""},
+        {"commit": "false", "head": "main"},
         {"lock": "not base64!"},
         {"lock": ""},
         {"arm": "yes"},
@@ -523,3 +531,55 @@ def test_the_job_holding_the_key_refuses_a_bad_plan(repository, change):
 
 def test_a_good_plan_passes_the_check(repository):
     assert repository.act(GOOD_PLAN).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["hold", "close", "propose"],
+)
+def test_the_key_never_touches_a_pr_that_isnt_the_rebuild_pr(repository, operation):
+    repository.pull(number=66, head="someone-elses-branch")
+    plan = GOOD_PLAN | {
+        "operation": operation,
+        "number": "66",
+        "commit": "false",
+        "head": HEAD_SHA,
+    }
+    result = repository.act(plan)
+    assert result.returncode != 0
+    assert "refusing #66" in result.stderr
+    assert list(repository.writes()) == []
+
+
+def test_the_key_never_touches_a_fork_pr_on_the_same_branch_name(repository):
+    repository.pull(number=66, isCrossRepository=True)
+    plan = GOOD_PLAN | {"number": "66", "commit": "false", "head": HEAD_SHA}
+    assert repository.act(plan).returncode != 0
+    assert list(repository.writes()) == []
+
+
+def arm_call(repository):
+    return next(c for c in repository.state["calls"] if "--auto" in c)
+
+
+def test_arming_is_tied_to_the_new_commit(repository):
+    repository.run(NEW)
+    call = arm_call(repository)
+    binding = call[call.index("--match-head-commit") + 1]
+    assert binding == repository.state["refs"][BRANCH]
+
+
+def test_arming_an_unchanged_pr_is_tied_to_the_head_that_was_checked(repository):
+    repository.pull()
+    repository.run(NEW)
+    call = arm_call(repository)
+    assert call[call.index("--match-head-commit") + 1] == HEAD_SHA
+
+
+def test_a_new_commit_on_an_armed_pr_is_armed_from_nothing(repository):
+    repository.pull(autoMergeRequest={"commitHeadline": FIX_TITLE})
+    assert repository.run(NEWER).returncode == 0
+    writes = list(repository.writes())
+    assert "--disable-auto" in writes[0]
+    assert "--auto" in writes[-1]
+    assert "--match-head-commit" in writes[-1]

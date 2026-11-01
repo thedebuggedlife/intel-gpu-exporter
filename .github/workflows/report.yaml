@@ -6,6 +6,7 @@ on:
     workflows:
       - dependabot-decide
       - dependabot-merge
+      - publish
       - rebuild
       - release
     types:

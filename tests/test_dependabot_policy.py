@@ -220,7 +220,10 @@ def test_only_open_alerts_for_this_package_count(github):
     dependabot_policy.main()
     _, calls = github
     path = next(p for p, _ in calls if "/dependabot/alerts" in p)
-    assert path == f"repos/{REPOSITORY}/dependabot/alerts?state=open&package=a-b"
+    assert path == (
+        f"repos/{REPOSITORY}/dependabot/alerts"
+        "?state=open&package=a-b&manifest=requirements.txt"
+    )
 
 
 def test_a_failed_alert_lookup_fails_instead_of_reading_as_no_alert(monkeypatch):
@@ -230,7 +233,7 @@ def test_a_failed_alert_lookup_fails_instead_of_reading_as_no_alert(monkeypatch)
         lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "HTTP 403"),
     )
     with pytest.raises(SystemExit) as failure:
-        dependabot_policy.open_alert(REPOSITORY, "a")
+        dependabot_policy.open_alert(REPOSITORY, "a", ["requirements.txt"])
     assert "HTTP 403" in str(failure.value)
 
 

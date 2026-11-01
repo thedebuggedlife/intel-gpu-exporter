@@ -33,6 +33,7 @@ jobs:
       branch-exists: ${{ steps.plan.outputs.branch-exists }}
       commit: ${{ steps.plan.outputs.commit }}
       disarm: ${{ steps.plan.outputs.disarm }}
+      head: ${{ steps.plan.outputs.head }}
       lock: ${{ steps.plan.outputs.lock }}
       number: ${{ steps.plan.outputs.number }}
       operation: ${{ steps.plan.outputs.operation }}
@@ -74,6 +75,7 @@ jobs:
       CLOSING_NOTE: The rebuilt image matches the committed `image.lock` again.
       COMMIT: ${{ needs.plan.outputs.commit }}
       DISARM: ${{ needs.plan.outputs.disarm }}
+      HEAD: ${{ needs.plan.outputs.head }}
       LOCK: ${{ needs.plan.outputs.lock }}
       NUMBER: ${{ needs.plan.outputs.number }}
       OPERATION: ${{ needs.plan.outputs.operation }}
@@ -99,8 +101,10 @@ jobs:
               [[ "$TITLE" = "chore(deps): record image contents" || "$TITLE" = "fix(deps): update image packages" ]] ||
                 refuse "an unknown title"
               if [ "$COMMIT" = true ]; then
-                [[ "$BASE" =~ ^[0-9a-f]{40}$ ]] || refuse "a malformed base commit"
+                [ "$BASE" = "$GITHUB_SHA" ] || refuse "a base other than the commit this run built"
                 [[ "$LOCK" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || refuse "a malformed lock"
+              elif [ "$ARM" = true ]; then
+                [[ "$HEAD" =~ ^[0-9a-f]{40}$ ]] || refuse "no head commit to arm"
               fi
               ;;
             *)
@@ -116,6 +120,18 @@ jobs:
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
+
+      - name: Check the PR
+        if: needs.plan.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER" \
+            --jq '[.head.ref, .head.repo.full_name, .base.ref, .state] | join(" ")')
+          if [ "$current" != "$BRANCH $GITHUB_REPOSITORY main open" ]; then
+            echo "refusing #$NUMBER, which reads $current" >&2
+            exit 1
+          fi
 
       - name: Hold the PR for review
         if: needs.plan.outputs.operation == 'hold'
@@ -184,5 +200,6 @@ jobs:
               post PATCH "pulls/$number" .number
           fi
           if [ "$ARM" = true ]; then
-            gh pr merge "$number" --repo "$repo" --auto --squash --subject "$TITLE" --body "$BODY"
+            gh pr merge "$number" --repo "$repo" --auto --squash --match-head-commit "${commit:-$HEAD}" \
+              --subject "$TITLE" --body "$BODY"
           fi

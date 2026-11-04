@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/thedebuggedlife/intel-gpu-exporter/compare/v1.0.1...v1.0.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **deps:** update image packages ([51eb203](https://github.com/thedebuggedlife/intel-gpu-exporter/commit/51eb2033b9656152bddc2357ca9d9b132ed4939c))
+
 ## [1.0.1](https://github.com/thedebuggedlife/intel-gpu-exporter/compare/v1.0.0...v1.0.1) (2026-11-01)
 
 

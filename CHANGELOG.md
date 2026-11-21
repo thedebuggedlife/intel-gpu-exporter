@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/thedebuggedlife/intel-gpu-exporter/compare/v1.0.3...v1.0.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** bump library/alpine from `be26560` to `f59abe6` ([359d90c](https://github.com/thedebuggedlife/intel-gpu-exporter/commit/359d90c903a291f8936a132119854b0c041aa9d2))
+
 ## [1.0.3](https://github.com/thedebuggedlife/intel-gpu-exporter/compare/v1.0.2...v1.0.3) (2026-11-11)
 
 

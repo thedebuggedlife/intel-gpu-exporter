@@ -30,7 +30,7 @@ permissions: {}
 jobs:
   gate-tests:
     name: gate-tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -47,7 +47,7 @@ jobs:
   # This job's file is what gets pushed, so nothing here installs packages or restores a cache
   gate-build:
     name: gate-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -111,7 +111,7 @@ jobs:
   gate-verify:
     name: gate-verify
     needs: gate-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -143,12 +143,10 @@ jobs:
             echo "downloaded $index, but the build produced $DIGEST" >&2
             exit 1
           fi
-          skopeo copy oci-archive:artifact/image.tar docker-archive:loadable.tar:intel-gpu-exporter:gate
-          docker load --input loadable.tar
-          rm loadable.tar
+          docker load --input artifact/image.tar
           loaded=$(docker image inspect --format '{{.Id}}' intel-gpu-exporter:gate)
-          if [ "$loaded" != "$CONFIG_DIGEST" ]; then
-            echo "loaded $loaded, but the archive's config is $CONFIG_DIGEST" >&2
+          if [ "$loaded" != "$DIGEST" ]; then
+            echo "loaded $loaded, but the build produced $DIGEST" >&2
             exit 1
           fi
 

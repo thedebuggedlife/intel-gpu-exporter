@@ -22,7 +22,7 @@ jobs:
     name: plan
     needs: gate
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -62,7 +62,7 @@ jobs:
     name: update
     needs: plan
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.operation != 'none'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     environment: release-bot
     permissions: {}

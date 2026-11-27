@@ -17,7 +17,7 @@ jobs:
       github.event.workflow_run.event == 'pull_request_target'
       && github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.path == '.github/workflows/dependabot-decide.yaml'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       actions: read
@@ -65,7 +65,7 @@ jobs:
     name: act
     needs: verify
     if: needs.verify.outputs.decision != 'none'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     environment: release-bot
     permissions: {}

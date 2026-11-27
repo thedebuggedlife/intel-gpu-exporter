@@ -16,7 +16,7 @@ jobs:
   release-please:
     name: release-please
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-bot
     permissions: {}
@@ -47,7 +47,7 @@ jobs:
     name: decide
     needs: release-please
     if: vars.PUBLISH_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -90,7 +90,7 @@ jobs:
     name: auto-merge
     needs: decide
     if: vars.PUBLISH_ENABLED == 'true' && needs.decide.outputs.decision != 'none'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     environment: release-bot
     permissions: {}
@@ -158,7 +158,7 @@ jobs:
     name: check-tag
     needs: release-please
     if: needs.release-please.outputs.created == 'true' && vars.PUBLISH_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read

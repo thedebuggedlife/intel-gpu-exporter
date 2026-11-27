@@ -22,7 +22,7 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository
       && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.event == 'pull_request_target')
       && !contains(fromJSON('["success", "skipped", "neutral"]'), github.event.workflow_run.conclusion)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     concurrency:
       group: track-failure
@@ -52,7 +52,7 @@ jobs:
       github.event.workflow_run.name == 'rebuild'
       && github.event.workflow_run.head_repository.full_name == github.repository
       && github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     continue-on-error: true
     permissions:

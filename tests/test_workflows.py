@@ -9,6 +9,8 @@ from scripts.image_lock import CHORE_TITLE, FIX_TITLE
 
 WORKFLOWS = REPO / ".github" / "workflows"
 ACTIONS = REPO / ".github" / "actions"
+# The gate's load step relies on this image's Docker using the containerd image store
+RUNNER = "ubuntu-26.04"
 PINNED = re.compile(r"uses:\s+\S+@[0-9a-f]{40} # v\d+\.\d+\.\d+$")
 
 
@@ -42,6 +44,13 @@ def test_every_action_is_pinned():
     assert lines
     for path, line in lines:
         assert PINNED.search(line), f"{path}: {line}"
+
+
+def test_every_job_runs_on_the_pinned_runner():
+    runners = {(path, name): job.get("runs-on") for path, name, job in all_jobs()}
+    assert {r for r in runners.values() if r is not None} == {RUNNER}
+    called = {key for key, runner in runners.items() if runner is None}
+    assert all("uses" in load(path)["jobs"][name] for path, name in called)
 
 
 def test_every_job_declares_permissions():
@@ -170,8 +179,10 @@ def test_verify_compares_the_download_with_the_build_jobs_digest():
     assert job["env"]["CONFIG_DIGEST"] == "${{ needs.gate-build.outputs.config }}"
     run = gate_steps()[gate_step_index("docker load")]["run"]
     assert '"$index" != "$DIGEST"' in run
-    assert '"$loaded" != "$CONFIG_DIGEST"' in run
-    assert run.index('"$index" != "$DIGEST"') < run.index("skopeo copy")
+    assert "docker load --input artifact/image.tar" in run
+    assert '"$loaded" != "$DIGEST"' in run
+    assert "skopeo copy" not in run
+    assert run.index('"$index" != "$DIGEST"') < run.index("docker load")
 
 
 def test_no_gate_job_shares_a_required_checks_name():
